@@ -1,0 +1,77 @@
+{
+	"__sql__": {
+		"auto_primary": "UUID()",
+		"changes": [ "user" ],
+		"create": [
+			"_created", "_updated", "_category", "_locale", "slug", "title",
+			"description"
+		],
+		"db": "blog",
+		"host": "blog",
+		"indexes": {
+			"category_locale": { "unique": [ "_category", "_locale" ] },
+			"slug": { "unique": null }
+		},
+		"primary": "_id",
+		"table": "blog_category_locale",
+		"charset": "utf8mb4",
+		"collate": "utf8mb4_unicode_ci"
+	},
+
+	"__name__": "Blog_Category_Locale",
+
+	"_id": {
+		"__type__": "uuid",
+		"__optional__": true
+	},
+
+	"_created": {
+		"__type__": "timestamp",
+		"__optional__": true,
+		"__sql__": {
+			"opts": "not null default CURRENT_TIMESTAMP"
+		}
+	},
+
+	"_updated": {
+		"__type__": "timestamp",
+		"__optional__": true,
+		"__sql__": {
+			"opts": "not null default CURRENT_TIMESTAMP on update CURRENT_TIMESTAMP"
+		}
+	},
+
+	"_category": {
+		"__type__": "uuid"
+	},
+
+	"_locale": {
+		"__type__": "string",
+		"__regex__": "^[a-z]{2}-[A-Z]{2}$",
+		"__sql__": {
+			"type": "char(5)"
+		}
+	},
+
+	"slug": {
+		"__type__": "string",
+		"__maximum__": 128,
+		"__regex__": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+		"__sql__": {
+			"type": "varchar(128)"
+		}
+	},
+
+	"title": {
+		"__type__": "string",
+		"__maximum__": 255
+	},
+
+	"description": {
+		"__type__": "string",
+		"__maximum__": 65535,
+		"__ui__": {
+			"type": "html"
+		}
+	}
+}
