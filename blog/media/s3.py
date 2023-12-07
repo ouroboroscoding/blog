@@ -97,7 +97,7 @@ class __S3Storage(BaseMediaStorage):
 
 		# If there's a path, prepend it
 		if self._path:
-			sKey = self.__path + sKey
+			sKey = self._path + sKey
 
 		# Keep trying if we get timeout errors
 		iTimeouts = 0
@@ -178,7 +178,7 @@ class __S3Storage(BaseMediaStorage):
 			try:
 
 				# Attempt to fetch the object
-				dBlob = self._resource.Object(self.__bucket, sKey).get()
+				dBlob = self._resource.Object(self._bucket, sKey).get()
 
 				# Return the body
 				return dBlob['Body'].read()
@@ -251,14 +251,19 @@ class __S3Storage(BaseMediaStorage):
 
 		# If we have the mime type
 		if mime is not None:
-			dHeaders['mime'] = mime
+			dHeaders['ContentType'] = mime
 
 		# Init the key using the filename
 		sKey = filename
 
+		print('save:')
+		print(sKey)
+
 		# If there's a path, prepend it
 		if self._path:
+			print('has path')
 			sKey = self._path + sKey
+		print(sKey)
 
 		# Keep trying if we get timeout errors
 		iTimeouts = 0
@@ -335,7 +340,7 @@ class __S3Storage(BaseMediaStorage):
 
 		# Return the URL
 		return 'https://%s.s3.amazonaws.com/%s' % (
-			self.__bucket,
+			self._bucket,
 			sKey
 		)
 

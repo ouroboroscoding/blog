@@ -64,6 +64,7 @@ class Blog(Service):
 		Returns:
 			Blog
 		"""
+		return self
 
 	def media_create(self, req: dict) -> Response:
 		"""Media create
@@ -106,7 +107,7 @@ class Blog(Service):
 			if 'thumbnails' in req['data']:
 
 				# Get the node
-				oNode = Media.get('image').get('thumbnails')
+				oNode = Media._conf['tree'].get('image').get('thumbnails')
 
 				# If they're valid, pop them off for later
 				if oNode.valid(req['data']['thumbnails']):
@@ -143,7 +144,7 @@ class Blog(Service):
 				for s in lThumbnails:
 
 					# Get the type and dimensions
-					bCrop = s[0]
+					bCrop = s[0] == 'c'
 					sDims = s[1:]
 
 					# Get a new image for the size
@@ -163,18 +164,23 @@ class Blog(Service):
 		try:
 			if dImage:
 				req['data']['image'] = dImage
-			req['data']['_archived'] = False
+			req['data']['uploader'] = req['session']['user']['_id']
 			oFile = Media(req['data'])
 		except ValueError as e:
 			return Services.Error(1001, e.args[0])
 
 		# Create the record
-		if not oFile.create(
-			changes = { 'user': req['session']['user']['_id'] }
-		):
+		try:
+			if not oFile.create(
+				changes = { 'user': req['session']['user']['_id'] }
+			):
 
-			# Record failed to be created
-			return Services.Error(errors.DB_CREATE_FAILED)
+				# Record failed to be created
+				return Services.Error(errors.DB_CREATE_FAILED)
+
+		# If the file already exists
+		except DuplicateException as e:
+			return Error(errors.DB_DUPLICATE)
 
 		# Init the urls
 		dURLs = {}
