@@ -21,7 +21,7 @@ from os import environ
 from RestOC import EMail, REST, Services, Session
 
 # Module imports
-from blog.service import Blog
+from .service import Blog
 
 def run():
 	"""Run
@@ -93,11 +93,10 @@ def run():
 	# Create the HTTP server and map requests to service
 	REST.Server({
 
-		'/category': { 'methods': REST.ALL },
-
-		'/post': { 'methods': REST.ALL },
-		'/posts/range': { 'methods': REST.READ },
-		'/posts/category': { 'methods': REST.READ }
+		'/media': { 'methods': REST.CREATE | REST.DELETE | REST.READ },
+		'/media/filter': { 'methods': REST.READ },
+		'/media/thumbnail': { 'methods': REST.CREATE | REST.DELETE },
+		'/media/url': { 'methods': REST.READ }
 
 		},
 		'blog',

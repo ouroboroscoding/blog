@@ -2,7 +2,7 @@
 	"__sql__": {
 		"auto_primary": "UUID()",
 		"changes": [ "user" ],
-		"create": [ "_created", "_updated", "_author", "category", "date" ],
+		"create": [ "_created", "_updated", "author", "category", "date" ],
 		"db": "blog",
 		"host": "blog",
 		"indexes": {
@@ -14,6 +14,8 @@
 		"charset": "utf8mb4",
 		"collate": "utf8mb4_unicode_ci"
 	},
+
+	"__name__": "Blog_Post",
 
 	"_id": {
 		"__type__": "uuid",

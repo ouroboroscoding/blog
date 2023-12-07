@@ -14,7 +14,7 @@ __created__		= "2023-11-27"
 from upgrade import set_latest
 
 # Module imports
-from blog import records
+from . import records
 
 def install(conf):
 	"""Install
@@ -32,7 +32,7 @@ def install(conf):
 	records.install()
 
 	# Store the last known upgrade version
-	set_latest(conf['data'], conf['module'])
+	set_latest(conf['data'], conf['module'], '1.0.0')
 
 	# Return OK
 	return 0

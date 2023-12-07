@@ -1,0 +1,69 @@
+{
+	"__sql__": {
+		"auto_primary": "UUID()",
+		"changes": [ "user" ],
+		"create": [
+			"_created", "uploader", "filename", "mime", "length", "image"
+		],
+		"db": "blog",
+		"host": "blog",
+		"indexes": {
+			"_created": null,
+			"uploader": null,
+			"filename": { "unique": null }
+		},
+		"primary": "_id",
+		"table": "blog_media",
+		"charset": "utf8mb4",
+		"collate": "utf8mb4_unicode_ci"
+	},
+
+	"__name__": "Blog_Media",
+
+	"_id": {
+		"__type__": "uuid",
+		"__optional__": true
+	},
+
+	"_created": {
+		"__type__": "timestamp",
+		"__optional__": true,
+		"__sql__": {
+			"opts": "not null default CURRENT_TIMESTAMP"
+		}
+	},
+
+	"uploader": {
+		"__type__": "uuid"
+	},
+
+	"filename": {
+		"__type__": "string",
+		"__maximum__": 128
+	},
+
+	"mime": {
+		"__type__": "string",
+		"__maximum__": 32
+	},
+
+	"length": {
+		"__type__": "uint"
+	},
+
+	"image": {
+		"__optional__": true,
+		"resolution": {
+			"width": { "__type__": "uint" },
+			"height": { "__type__": "uint" }
+		},
+		"thumbnails": {
+			"__array__" : "unique",
+			"__type__": "string",
+			"__regex__": "^(?:source|[cf][1-9]\\d*x[1-9]\\d*)$"
+		},
+		"__sql__": {
+			"json": true
+		}
+	}
+}

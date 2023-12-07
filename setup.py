@@ -29,6 +29,7 @@ setup(
 		'body-oc>=1.0.2,<1.1',
 		'brain-oc>=1.1.6,<1.2',
 		'config-oc>=1.0.2,<1.1',
+		'jsonb>=1.0.0,<1.1',
 		'Rest-OC>=1.2.4',
 		'undefined-oc>=1.0.0,<1.1',
 		'upgrade-oc>=1.0.1,<1.1'

@@ -23,7 +23,7 @@ from sys import argv, exit, stderr
 from RestOC import Record_MySQL
 
 # Module imports
-from blog import install, rest
+from . import install, rest
 
 def cli():
 	"""CLI
@@ -88,7 +88,7 @@ def cli():
 			return upgrade(dConfig['data'], dConfig['module'])
 
 	# Else, arguments are wrong, print and return an error
-	print('Invalid arguments', file=stderr)
+	print('Invalid arguments: %s' % argv[1:], file = stderr)
 	return 1
 
 # Only run if called directly

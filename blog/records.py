@@ -14,7 +14,9 @@ __created__		= "2023-11-27"
 from config import config
 
 # Python imports
+import os
 import pathlib
+from typing import List
 
 # Pip imports
 from FormatOC import Tree
@@ -34,6 +36,7 @@ def install():
 	Category.table_create()
 	CategoryLocale.table_create()
 	Comment.table_create()
+	Media.table_create()
 	Post.table_create()
 	PostLocale.table_create()
 	PostLocaleTag.table_create()
@@ -122,6 +125,129 @@ class Comment(Record_MySQL.Record):
 
 		# Return the config
 		return cls._conf
+
+class Media(Record_MySQL.Record):
+	"""Media
+
+	Represents a category for blog posts to be in
+
+	Extends:
+		Record_MySQL.Record
+	"""
+
+	_conf = Record_MySQL.Record.generate_config(
+		Tree.fromFile('%s/media.json' % _defPath),
+		override={ 'db': config.mysql.db('brain') }
+	)
+	"""Static Configuration"""
+
+	@classmethod
+	def config(cls):
+		"""Config
+
+		Returns the configuration data associated with the record type
+
+		Returns:
+			dict
+		"""
+
+		# Return the config
+		return cls._conf
+
+	@classmethod
+	def _filename(self, data: dict, size: str = 'source') -> str:
+		"""Filename (static)
+
+		Generate the filename based on the size given
+
+		Arguments:
+			file (dict): Media record data
+			size (str): Optional, the size of the file, defaults to 'source' \
+				to fetch the original unaltered file
+
+		Returns:
+			str
+		"""
+
+		# Split the filename
+		lFile = os.path.splitext(data['filename'])
+
+		# Return the generated string
+		return '%s/%s%s%s' % (
+			data['_id'],
+			lFile[0],
+			(size == 'source' and '' or ('_%s' % size)),
+			lFile[1]
+		)
+
+	def filename(self, size: str = 'source') -> str:
+		"""Filename
+
+		Generate the filename based on the size given
+
+		Arguments:
+			size (str): Optional, the size of the file, defaults to 'source' \
+				to fetch the original unaltered file
+
+		Returns:
+			str
+		"""
+		return self._filename(self._dRecord, size)
+
+	@classmethod
+	def filter(cls, options: dict, custom: dict = {}) -> List[dict]:
+		"""Filter
+
+		Fetches media files based on options
+
+		Arguments:
+			options (dict): Options: range: list, filename: str, mine: bool
+			custom (dict): Custom Host and DB info
+				'host' the name of the host to get/set data on
+				'append' optional postfix for dynamic DBs
+
+		Returns:
+			dict[]
+		"""
+
+		# Get the structure
+		dStruct = cls.struct(custom)
+
+		# Create the WHERE clauses
+		lWhere = []
+		if 'range' in options:
+			lWhere.append('`_created` BETWEEN FROM_UNIXTIME(%d) AND ' \
+				 			'FROM_UNIXTIME(%d)' % (
+				options['range'][0], options['range'][1]
+			))
+		if 'filename' in options and options['filename']:
+			lWhere.append("`filename` LIKE '%%%s%%'" % \
+				Record_MySQL.Commands.escape(
+					dStruct['host'], options['filename']
+				)
+			)
+		if 'mine' in options and options['mine']:
+			lWhere.append("`uploader` = '%s'" % options['mine'])
+
+		# If we have nothing
+		if not lWhere:
+			return []
+
+		# Generate the SQL
+		sSQL = "SELECT *\n" \
+			 	"FROM `%(db)s`.`%(table)s`\n" \
+				"WHERE %(where)s" % {
+			'db': dStruct['db'],
+			'table': dStruct['table'],
+			'where': ' AND '.join(lWhere)
+		}
+
+		# Select and return the data
+		return Record_MySQL.Commands.select(
+			dStruct['host'],
+			sSQL,
+			Record_MySQL.ESelect.ALL
+		)
 
 class Post(Record_MySQL.Record):
 	"""Post
