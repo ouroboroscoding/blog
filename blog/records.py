@@ -12,6 +12,7 @@ __created__		= "2023-11-27"
 
 # Ouroboros imports
 from config import config
+import jsonb
 
 # Python imports
 import os
@@ -242,12 +243,24 @@ class Media(Record_MySQL.Record):
 			'where': ' AND '.join(lWhere)
 		}
 
-		# Select and return the data
-		return Record_MySQL.Commands.select(
+		print(sSQL)
+
+		# Fetch the records
+		lRecords = Record_MySQL.Commands.select(
 			dStruct['host'],
 			sSQL,
 			Record_MySQL.ESelect.ALL
 		)
+
+		# Go through each record
+		for d in lRecords:
+
+			# If we have image data
+			if 'image' in d and d['image']:
+				d['image'] = jsonb.decode(d['image'])
+
+		# Return the records
+		return lRecords
 
 class Post(Record_MySQL.Record):
 	"""Post

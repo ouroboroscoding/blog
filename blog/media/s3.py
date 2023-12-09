@@ -17,6 +17,7 @@ from config import config
 
 # Python modules
 from time import sleep
+from urllib import parse
 
 # Import pip modules
 import boto3
@@ -256,14 +257,9 @@ class __S3Storage(BaseMediaStorage):
 		# Init the key using the filename
 		sKey = filename
 
-		print('save:')
-		print(sKey)
-
 		# If there's a path, prepend it
 		if self._path:
-			print('has path')
 			sKey = self._path + sKey
-		print(sKey)
 
 		# Keep trying if we get timeout errors
 		iTimeouts = 0
@@ -341,7 +337,7 @@ class __S3Storage(BaseMediaStorage):
 		# Return the URL
 		return 'https://%s.s3.amazonaws.com/%s' % (
 			self._bucket,
-			sKey
+			parse.quote(sKey)
 		)
 
 # Create the single instance

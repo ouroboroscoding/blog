@@ -307,10 +307,22 @@ class Blog(Service):
 		if not dFilter:
 			return Error(errors.DATA_FIELDS, [ [ 'range', 'missing' ] ])
 
-		# Fetch and return the media
-		return Response(
-			Media.filter(dFilter)
-		)
+		# Get the records
+		lRecords = Media.filter(dFilter)
+
+		# Go through each and add the URLs
+		for d in lRecords:
+
+			# Init the urls
+			d['urls'] = { 'source': MediaStorage.url(Media._filename(d)) }
+
+			# If we have an image, and we have thumbnails
+			if 'image' in d and d['image'] and d['image']['thumbnails']:
+				for s in d['image']['thumbnails']:
+					d['urls'][s] = MediaStorage.url(Media._filename(d, s))
+
+		# Return the records
+		return Response(lRecords)
 
 	def media_read(self, req: dict) -> Response:
 		"""Media read
@@ -407,20 +419,33 @@ class Blog(Service):
 		# Generate a new thumbnail
 		sThumbnails = Image.resize(sImage, sDims, bCrop)
 
+		# Generate the filename
+		sFilename = oFile.filename(req['data']['size'])
+
 		# Store it
-		if not MediaStorage.save(
-			oFile.filename(req['data']['size']), sThumbnails, oFile['mime']
-		):
+		if not MediaStorage.save(sFilename, sThumbnails, oFile['mime']):
+
+			# If it failed, return a standard storage error, plus the error from
+			#	the specific storage engine
 			return Error(STORAGE_ISSUE, MediaStorage.last_error())
 
 		# Update the thumbnails
 		dImage = clone(oFile['image'])
 		dImage['thumbnails'].append(req['data']['size'])
 
-		# Update the record, return the result
+		# Set the new image in the record
 		oFile['image'] = dImage
+
+		# Save the record and store the result
+		bRes = oFile.save(changes = {'user': req['session']['user']['_id']})
+
+		# If we failed to save the record
+		if not bRes:
+			return Error(errors.DB_UPDATE_FAILED)
+
+		# Return the new URL
 		return Response(
-			oFile.save(changes = {'user': req['session']['user']['_id']})
+			MediaStorage.url(sFilename)
 		)
 
 	def media_thumbnail_delete(self, req: dict) -> Response:
@@ -463,17 +488,27 @@ class Blog(Service):
 
 		# Delete it
 		if not MediaStorage.delete(oFile.filename(req['data']['size'])):
+
+			# If it failed, return a standard storage error, plus the error from
+			#	the specific storage engine
 			return Error(STORAGE_ISSUE, MediaStorage.last_error())
 
-		# Update the thumbnails
+		# Update the thumbnails in the image section
 		dImage = clone(oFile['image'])
 		dImage['thumbnails'].remove(req['data']['size'])
 
-		# Update the record, return the result
+		# Set the new image in the record
 		oFile['image'] = dImage
-		return Response(
-			oFile.save(changes = {'user': req['session']['user']['_id']})
-		)
+
+		# Save the record and store the result
+		bRes = oFile.save(changes = {'user': req['session']['user']['_id']})
+
+		# If we failed to save the record
+		if not bRes:
+			return Error(errors.DB_UPDATE_FAILED)
+
+		# Return success
+		return Response(True)
 
 	def media_url_read(self, req: dict) -> Response:
 		"""Media URL read
