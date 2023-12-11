@@ -11,7 +11,7 @@ __email__		= "chris@ouroboroscoding.com"
 __created__		= "2023-11-30"
 
 # Ouroboros imports
-from body import errors
+from body import constants, errors
 from brain import access, users
 from brain.users import details
 from config import config
@@ -31,7 +31,7 @@ from RestOC.Services import Error, internal_key, Response, Service
 from RestOC.Record_MySQL import DuplicateException
 
 # Errors
-from .errors import NOT_AN_IMAGE, STORAGE_ISSUE
+from .errors import NOT_AN_IMAGE, POSTS_ASSOCIATED, STORAGE_ISSUE
 
 # Record classes
 from .records import Category, CategoryLocale, Comment, Media, Post, \
@@ -66,7 +66,323 @@ class Blog(Service):
 		"""
 		return self
 
-	def media_create(self, req: dict) -> Response:
+	def admin_category_create(self, req: dict) -> Response:
+		"""Category create
+
+		Adds a new category to the system for use in blog posts
+
+		Arguments:
+		req (dict): The request details, which can include 'data', \
+			'environment', and 'session'
+
+		Returns:
+			Services.Response
+		"""
+
+		# Make sure the user is signed in and has access
+		access.verify(req['session'], 'blog_category', access.CREATE)
+
+		# Check minimum fields
+		try: evaluate(req['data'], [{'record': ['locales']}])
+		except ValueError as e:
+			return Error(
+				errors.DATA_FIELDS, [ [ s, 'missing' ] for s in e.args ]
+			)
+
+		# Get the record
+		dRecord = req['data']['record']
+
+		# If locales exists but is empty
+		if not dRecord['locales']:
+			return Error(
+				errors.DATA_FIELDS, [ [ 'record.locales', 'missing' ] ]
+			)
+
+		# If it exists but is not a dict
+		if not isinstance(dRecord['locales']):
+			return Error(
+				errors.DATA_FIELDS, [ [ 'record.locales', 'invalid' ] ]
+			)
+
+		# Go through each passed locale
+		lLocales = []
+		for k,d in dRecord['locales']:
+
+			# Add the empty UUID so we don't fail on the `_category` check
+			d['_category'] = constants.EMPTY_UUID
+
+			# Verify the fields
+			try:
+				lLocales.append(CategoryLocale(d))
+			except ValueError as e:
+				return Error(
+					errors.DATA_FIELDS,
+					[ [ 'record.locale.%s.%s' % (k, l[0]), l[1] ] \
+						for l in e.args[0] ]
+				)
+
+			# Make sure we don't already have the slug
+			if CategoryLocale.exists(d['slug'], 'slug'):
+				return Error(errors.DB_DUPLICATE, [ d['slug'], 'slug' ])
+
+		# Create the instance to verify fields
+		try:
+			oCategory = Category(req['data']['record'])
+		except ValueError as e:
+			return Error(
+				errors.DATA_FIELDS,
+				[ [ 'record.%s' % l[0] for l in e.args[0] ] ]
+			)
+
+		# Create the record
+		try:
+			oCategory.create(changes = {
+				'user': req['session']['user']['_id']
+			})
+		except DuplicateException as e:
+			return Error(
+				errors.DB_DUPLICATE, [ req['records']['name'], 'name' ]
+			)
+
+		# Create each locale
+		for o in lLocales:
+
+			# Add the real category ID
+			o['_category'] = oCategory['_id']
+
+			# Create the record
+			try:
+				o.create(changes = { 'user': req['session']['user']['_id'] })
+			except DuplicateException as e:
+
+				# Delete the existing category and any locales that were
+				#	created
+				oCategory.delete(
+					changes = { 'user': req['session']['user']['_id'] }
+				)
+				for o in lLocales:
+					if o['_id']:
+						o.delete(
+							changes = { 'user': req['session']['user']['_id'] }
+						)
+
+				# Return the duplicate error
+				return Error(errors.DB_DUPLICATE, [ o['slug'], 'slug' ])
+
+		# Return the new ID
+		return Response(oCategory['_id'])
+
+	def admin_category_delete(self, req: dict) -> Response:
+		"""Category delete
+
+		Removes an existing category from the system
+
+		Arguments:
+		req (dict): The request details, which can include 'data', \
+			'environment', and 'session'
+
+		Returns:
+			Services.Response
+		"""
+
+		# Make sure the user is signed in and has access
+		access.verify(req['session'], 'blog_category', access.DELETE)
+
+		# If we didn't get an ID
+		if '_id' not in req['data']:
+			return Error(errors.DATA_FIELDS, [ [ '_id', 'missing' ] ])
+
+		# Fetch the category
+		oCategory = Category.get(req['data']['_id'])
+		if not oCategory:
+			return Error(
+				errors.DB_NO_RECORD, [ req['data']['_id'], 'category' ]
+			)
+
+		# If there's any posts associated with this category let the user
+		#	know we can't delete it
+		lPosts = Post.filter({
+			'_category': req['data']['_id']
+		}, raw = [ '_id' ])
+		if lPosts:
+			return Error(POSTS_ASSOCIATED, [ d['_id'] for d in lPosts ])
+
+		# Delete the record
+		if not oCategory.delete(
+			changes = { 'user': req['session']['user']['_id'] }
+		):
+			# If it failed for any reason
+			return Error(
+				errors.DB_DELETE_FAILED, [ req['data']['_id'], 'category' ]
+			)
+
+		# Return OK
+		return Response(True)
+
+	def admin_category_read(self, req: dict) -> Response:
+		"""Category read
+
+		Fetches all data associated with one or all categories
+
+		Arguments:
+		req (dict): The request details, which can include 'data', \
+			'environment', and 'session'
+
+		Returns:
+			Services.Response
+		"""
+
+		# Make sure the user is signed in and has access
+		access.verify(req['session'], 'blog_category', access.READ)
+
+		# If there's no ID passed
+		if '_id' not in req['data']:
+
+			# Fetch all locales
+			lLocales = CategoryLocale.get(raw = True)
+
+			# Store locales by category
+			dLocales = {}
+			for d in lLocales:
+
+				# If the category doesn't exist
+				if d['_category'] not in dLocales:
+					dLocales[d['_category']] = {}
+
+				# Add the locale
+				dLocales[d['_category']][d['_locale']] = \
+					without(d, [ '_category', '_locale' ])
+
+			# Clear memory
+			del lLocales
+
+			# Fetch all categories
+			lCategories = Category.get(raw = True, orderby = [ 'name' ])
+
+			# Go through each one and add the locales
+			for d in lCategories:
+				try: d['locales'] = dLocales.pop(d['_category'])
+				except KeyError:
+					d['locales'] = {}
+
+			# Return the data
+			return Response(lCategories)
+
+		# Else, we got a specific ID
+		else:
+
+			# Fetch the category
+			dCategory = Category.get(req['data']['_id'], raw = True)
+			if not dCategory:
+				return Error(
+					errors.DB_NO_RECORD, [ req['data']['_id'], 'category' ]
+				)
+
+			# Fetch all locales associated
+			dCategory['locales'] = {
+				d['_locale']: without(d, [ '_category', '_locale' ]) \
+				for d in CategoryLocale.filter({
+					'_category': req['data']['_id']
+				}, raw = True)
+			}
+
+			# Return the data
+			return Response(dCategory)
+
+	def admin_category_update(self, req: dict) -> Response:
+		"""Category update
+
+		Updates all data associated with an existing category
+
+		Arguments:
+		req (dict): The request details, which can include 'data', \
+			'environment', and 'session'
+
+		Returns:
+			Services.Response
+		"""
+
+		# Make sure the user is signed in and has access
+		access.verify(req['session'], 'blog_category', access.UPDATE)
+
+		# Check minimum fields
+		try: evaluate(req['data'], [ '_id', 'record' ])
+		except ValueError as e:
+			return Error(
+				errors.DATA_FIELDS, [ [ s, 'missing' ] for s in e.args ]
+			)
+
+		# Get the record
+		oCategory = Category.get(req['data']['_id'])
+		if not oCategory:
+			return Error(
+				errors.DB_NO_RECORD, [ req['data']['_id'], 'category' ]
+			)
+
+		# Get the data
+		sID = req['data']['_id']
+		dRecord = req['data']['record']
+
+		# Init return result and errors
+		bRes = False
+		lErrors = []
+
+		# If we have locales
+		if 'locales' in dRecord:
+
+			# Go through each locale
+			for sLocale, dLocale in dRecord['locales']:
+
+				# Find the locale
+				oLocale = CategoryLocale.filter({
+					'_category': sID,
+					'_locale': sLocale
+				}, limit = 1)
+				if not oLocale:
+					return Error(
+						errors.DB_NO_RECORD,
+						[ '%s.%s' % (sID, sLocale), 'category_locale' ]
+					)
+
+				# Go through fields that can be changed
+				lLocaleErr = []
+				for f,v in without(dLocale, ['_id', '_created', '_locale']):
+					try: oLocale[f] = v
+					except ValueError as e:
+						lLocaleErr.extend(
+							[ 'record.locales.%s.%s' % (sLocale, l[0]), l[1] ] \
+								for l in e.args[0]
+						)
+
+				# If we any errors, extend the overall errors
+				if lLocaleErr:
+					lErrors.extend(lLocaleErr)
+
+				# Else, try to save the locale
+				else:
+					if oLocale.save(
+						changes = { 'user': req['session']['_id'] }
+					):
+						bRes = True
+
+		# If we have a name in the record
+		if 'name' in dRecord:
+
+			# Try to update the name
+			try: oCategory['name'] = dRecord['name']
+			except ValueError as e:
+				lErrors.extend([
+					[ 'record.%' % l[0], l[1] ] for l in e.args[0]
+				])
+
+		# If we have any errors
+		if lErrors:
+			return Error(errors.DATA_FIELDS, lErrors)
+
+		# Return the result
+		return Response(bRes)
+
+	def admin_media_create(self, req: dict) -> Response:
 		"""Media create
 
 		Adds new media to the system for use in blog posts
@@ -219,7 +535,7 @@ class Blog(Service):
 		# Return the file
 		return Response(dFile)
 
-	def media_delete(self, req: dict) -> Response:
+	def admin_media_delete(self, req: dict) -> Response:
 		"""Media delete
 
 		Removes media
@@ -269,7 +585,7 @@ class Blog(Service):
 			oFile.delete(changes = {'user': req['session']['user']['_id']})
 		)
 
-	def media_filter_read(self, req: dict) -> Response:
+	def admin_media_filter_read(self, req: dict) -> Response:
 		"""Media Filter read
 
 		Fetches existing media based on filtering info
@@ -324,7 +640,7 @@ class Blog(Service):
 		# Return the records
 		return Response(lRecords)
 
-	def media_read(self, req: dict) -> Response:
+	def admin_media_read(self, req: dict) -> Response:
 		"""Media read
 
 		Fetches an existing media and returns the data as well as the content \
@@ -366,7 +682,7 @@ class Blog(Service):
 		# Return the file
 		return Services.Response(dFile)
 
-	def media_thumbnail_create(self, req: dict) -> Response:
+	def admin_media_thumbnail_create(self, req: dict) -> Response:
 		"""Media thumbnails create
 
 		Adds a thumbnail to an existing file
@@ -448,7 +764,7 @@ class Blog(Service):
 			MediaStorage.url(sFilename)
 		)
 
-	def media_thumbnail_delete(self, req: dict) -> Response:
+	def admin_media_thumbnail_delete(self, req: dict) -> Response:
 		"""Media thumbnails delete
 
 		Removes a thumbnail from an existing file
@@ -510,7 +826,7 @@ class Blog(Service):
 		# Return success
 		return Response(True)
 
-	def media_url_read(self, req: dict) -> Response:
+	def admin_media_url_read(self, req: dict) -> Response:
 		"""Media URL read
 
 		Returns the URL for a specific media file (or a thumbnail)

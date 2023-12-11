@@ -20,3 +20,6 @@ STORAGE_ISSUE = 1400
 
 NOT_AN_IMAGE = 1401
 """Attempting to manipulate a file that is not an image"""
+
+POSTS_ASSOCIATED = 1402
+"""Attempting to delete a category with posts associated"""

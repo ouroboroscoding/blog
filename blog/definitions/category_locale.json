@@ -3,7 +3,7 @@
 		"auto_primary": "UUID()",
 		"changes": [ "user" ],
 		"create": [
-			"_created", "_updated", "_category", "_locale", "slug", "title",
+			"_created", "_category", "_locale", "slug", "author", "title",
 			"description"
 		],
 		"db": "blog",
@@ -33,14 +33,6 @@
 		}
 	},
 
-	"_updated": {
-		"__type__": "timestamp",
-		"__optional__": true,
-		"__sql__": {
-			"opts": "not null default CURRENT_TIMESTAMP on update CURRENT_TIMESTAMP"
-		}
-	},
-
 	"_category": {
 		"__type__": "uuid"
 	},
@@ -60,6 +52,10 @@
 		"__sql__": {
 			"type": "varchar(128)"
 		}
+	},
+
+	"author": {
+		"__type__": "uuid"
 	},
 
 	"title": {

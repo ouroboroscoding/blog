@@ -2,12 +2,14 @@
 	"__sql__": {
 		"auto_primary": "UUID()",
 		"changes": [ "user" ],
-		"create": [ "_created", "_updated", "author", "category", "date" ],
+		"create": [ "_creator", "_created", "published", "category" ],
 		"db": "blog",
 		"host": "blog",
 		"indexes": {
-			"author": null,
-			"category": null
+			"_creator": null,
+			"_created": null,
+			"category": null,
+			"published": null
 		},
 		"primary": "_id",
 		"table": "blog_post",
@@ -22,6 +24,10 @@
 		"__optional__": true
 	},
 
+	"_creator": {
+		"__type__": "uuid"
+	},
+
 	"_created": {
 		"__type__": "timestamp",
 		"__optional__": true,
@@ -30,23 +36,15 @@
 		}
 	},
 
-	"_updated": {
+	"published": {
 		"__type__": "timestamp",
 		"__optional__": true,
 		"__sql__": {
-			"opts": "not null default CURRENT_TIMESTAMP on update CURRENT_TIMESTAMP"
+			"opts": "null default 0"
 		}
-	},
-
-	"author": {
-		"__type__": "uuid"
 	},
 
 	"category": {
 		"__type__": "uuid"
-	},
-
-	"date": {
-		"__type__": "timestamp"
 	}
 }

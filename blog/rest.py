@@ -93,10 +93,17 @@ def run():
 	# Create the HTTP server and map requests to service
 	REST.Server({
 
-		'/media': { 'methods': REST.CREATE | REST.DELETE | REST.READ },
-		'/media/filter': { 'methods': REST.READ },
-		'/media/thumbnail': { 'methods': REST.CREATE | REST.DELETE },
-		'/media/url': { 'methods': REST.READ }
+		'/admin/category': { 'methods': REST.ALL },
+
+		'/admin/post': { 'methods': REST.ALL },
+		'/admin/post/filter': { 'methods': REST.READ },
+		'/admin/post/locale': { 'methods': REST.ALL },
+		'/admin/post/publish': { 'methods': REST.UPDATE },
+
+		'/admin/media': { 'methods': REST.CREATE | REST.DELETE | REST.READ },
+		'/admin/media/filter': { 'methods': REST.READ },
+		'/admin/media/thumbnail': { 'methods': REST.CREATE | REST.DELETE },
+		'/admin/media/url': { 'methods': REST.READ }
 
 		},
 		'blog',
