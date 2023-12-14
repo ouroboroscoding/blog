@@ -46,23 +46,20 @@
 
 	"slug": {
 		"__type__": "string",
-		"__maximum__": 128,
+		"__maximum__": 60,
 		"__regex__": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
 		"__sql__": {
-			"type": "varchar(128)"
+			"type": "varchar(60)"
 		}
 	},
 
 	"title": {
 		"__type__": "string",
-		"__maximum__": 255
+		"__maximum__": 60
 	},
 
 	"description": {
 		"__type__": "string",
-		"__maximum__": 65535,
-		"__ui__": {
-			"type": "html"
-		}
+		"__maximum__": 155
 	}
 }

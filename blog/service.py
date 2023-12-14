@@ -99,17 +99,20 @@ class Blog(Service):
 			)
 
 		# If it exists but is not a dict
-		if not isinstance(dRecord['locales']):
+		if not isinstance(dRecord['locales'], dict):
 			return Error(
 				errors.DATA_FIELDS, [ [ 'record.locales', 'invalid' ] ]
 			)
 
 		# Go through each passed locale
 		lLocales = []
-		for k,d in dRecord['locales']:
+		for k,d in dRecord['locales'].items():
 
 			# Add the empty UUID so we don't fail on the `_category` check
 			d['_category'] = constants.EMPTY_UUID
+
+			# Add the locale as a field
+			d['_locale'] = k
 
 			# Verify the fields
 			try:
@@ -123,26 +126,16 @@ class Blog(Service):
 
 			# Make sure we don't already have the slug
 			if CategoryLocale.exists(d['slug'], 'slug'):
-				return Error(errors.DB_DUPLICATE, [ d['slug'], 'slug' ])
+				return Error(errors.DB_DUPLICATE, [ '%s.%s' % (k, d['slug']), 'slug' ])
 
-		# Create the instance to verify fields
-		try:
-			oCategory = Category(req['data']['record'])
-		except ValueError as e:
-			return Error(
-				errors.DATA_FIELDS,
-				[ [ 'record.%s' % l[0] for l in e.args[0] ] ]
-			)
+		# Create the instance
+		oCategory = Category({})
 
 		# Create the record
-		try:
-			oCategory.create(changes = {
-				'user': req['session']['user']['_id']
-			})
-		except DuplicateException as e:
-			return Error(
-				errors.DB_DUPLICATE, [ req['records']['name'], 'name' ]
-			)
+		if not oCategory.create(changes = {
+			'user': req['session']['user']['_id']
+		}):
+			return Error(errors.DB_CREATE_FAILED, 'category')
 
 		# Create each locale
 		for o in lLocales:
@@ -202,10 +195,26 @@ class Blog(Service):
 		# If there's any posts associated with this category let the user
 		#	know we can't delete it
 		lPosts = Post.filter({
-			'_category': req['data']['_id']
+			'category': req['data']['_id']
 		}, raw = [ '_id' ])
 		if lPosts:
 			return Error(POSTS_ASSOCIATED, [ d['_id'] for d in lPosts ])
+
+		# Get the associated locales
+		lLocales = CategoryLocale.filter({
+			'_category': req['data']['_id']
+		})
+
+		# Delete each one
+		for o in lLocales:
+			if not o.delete(
+				changes = { 'user': req['session']['user']['_id'] }
+			):
+
+				# If it failed for any reason
+				return Error(
+					errors.DB_DELETE_FAILED, [ o['_id'], 'category_locale' ]
+				)
 
 		# Delete the record
 		if not oCategory.delete(
@@ -236,7 +245,7 @@ class Blog(Service):
 		access.verify(req['session'], 'blog_category', access.READ)
 
 		# If there's no ID passed
-		if '_id' not in req['data']:
+		if 'data' not in req or '_id' not in req['data']:
 
 			# Fetch all locales
 			lLocales = CategoryLocale.get(raw = True)
@@ -257,11 +266,11 @@ class Blog(Service):
 			del lLocales
 
 			# Fetch all categories
-			lCategories = Category.get(raw = True, orderby = [ 'name' ])
+			lCategories = Category.get(raw = True)
 
 			# Go through each one and add the locales
 			for d in lCategories:
-				try: d['locales'] = dLocales.pop(d['_category'])
+				try: d['locales'] = dLocales.pop(d['_id'])
 				except KeyError:
 					d['locales'] = {}
 
@@ -306,7 +315,7 @@ class Blog(Service):
 		access.verify(req['session'], 'blog_category', access.UPDATE)
 
 		# Check minimum fields
-		try: evaluate(req['data'], [ '_id', 'record' ])
+		try: evaluate(req['data'], [ '_id', { 'record': [ 'locales' ] } ])
 		except ValueError as e:
 			return Error(
 				errors.DATA_FIELDS, [ [ s, 'missing' ] for s in e.args ]
@@ -327,53 +336,40 @@ class Blog(Service):
 		bRes = False
 		lErrors = []
 
-		# If we have locales
-		if 'locales' in dRecord:
+		# Go through each locale
+		for sLocale, dLocale in dRecord['locales']:
 
-			# Go through each locale
-			for sLocale, dLocale in dRecord['locales']:
+			# Find the locale
+			oLocale = CategoryLocale.filter({
+				'_category': sID,
+				'_locale': sLocale
+			}, limit = 1)
+			if not oLocale:
+				return Error(
+					errors.DB_NO_RECORD,
+					[ '%s.%s' % (sID, sLocale), 'category_locale' ]
+				)
 
-				# Find the locale
-				oLocale = CategoryLocale.filter({
-					'_category': sID,
-					'_locale': sLocale
-				}, limit = 1)
-				if not oLocale:
-					return Error(
-						errors.DB_NO_RECORD,
-						[ '%s.%s' % (sID, sLocale), 'category_locale' ]
+			# Go through fields that can be changed
+			lLocaleErr = []
+			for f,v in without(dLocale, ['_id', '_created', '_locale']):
+				try: oLocale[f] = v
+				except ValueError as e:
+					lLocaleErr.extend(
+						[ 'record.locales.%s.%s' % (sLocale, l[0]), l[1] ] \
+							for l in e.args[0]
 					)
 
-				# Go through fields that can be changed
-				lLocaleErr = []
-				for f,v in without(dLocale, ['_id', '_created', '_locale']):
-					try: oLocale[f] = v
-					except ValueError as e:
-						lLocaleErr.extend(
-							[ 'record.locales.%s.%s' % (sLocale, l[0]), l[1] ] \
-								for l in e.args[0]
-						)
+			# If we any errors, extend the overall errors
+			if lLocaleErr:
+				lErrors.extend(lLocaleErr)
 
-				# If we any errors, extend the overall errors
-				if lLocaleErr:
-					lErrors.extend(lLocaleErr)
-
-				# Else, try to save the locale
-				else:
-					if oLocale.save(
-						changes = { 'user': req['session']['_id'] }
-					):
-						bRes = True
-
-		# If we have a name in the record
-		if 'name' in dRecord:
-
-			# Try to update the name
-			try: oCategory['name'] = dRecord['name']
-			except ValueError as e:
-				lErrors.extend([
-					[ 'record.%' % l[0], l[1] ] for l in e.args[0]
-				])
+			# Else, try to save the locale
+			else:
+				if oLocale.save(
+					changes = { 'user': req['session']['_id'] }
+				):
+					bRes = True
 
 		# If we have any errors
 		if lErrors:
