@@ -93,7 +93,8 @@ def run():
 	# Create the HTTP server and map requests to service
 	REST.Server({
 
-		'/admin/category': { 'methods': REST.ALL },
+		'/admin/category': { 'methods': REST.CREATE | REST.DELETE | REST.READ },
+		'/admin/category/locale': { 'methods': REST.CREATE | REST.DELETE | REST.UPDATE },
 
 		'/admin/post': { 'methods': REST.ALL },
 		'/admin/post/filter': { 'methods': REST.READ },

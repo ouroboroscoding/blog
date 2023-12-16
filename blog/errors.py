@@ -23,3 +23,6 @@ NOT_AN_IMAGE = 1401
 
 POSTS_ASSOCIATED = 1402
 """Attempting to delete a category with posts associated"""
+
+MINIMUM_LOCALE = 1403
+"""Denotes trying to delete a locale that would leave the parent with no data"""
