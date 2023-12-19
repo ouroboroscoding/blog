@@ -387,7 +387,6 @@ class Blog(Service):
 		if not oLocale:
 			return Error(errors.DB_NO_RECORD)
 
-
 		# Go through fields that can be changed
 		lErrors = []
 		for f,v in without(
@@ -833,12 +832,16 @@ class Blog(Service):
 		if 'mine' in req['data']:
 			dFilter['mine'] = req['session']['user']['_id']
 
+		# If we only want images
+		if 'images_only' in req['data'] and req['data']['images_only']:
+			dFilter['images_only'] = True
+
 		# If there's no filter
 		if not dFilter:
 			return Error(errors.DATA_FIELDS, [ [ 'range', 'missing' ] ])
 
 		# Get the records
-		lRecords = Media.filter(dFilter)
+		lRecords = Media.search(dFilter)
 
 		# Go through each and add the URLs
 		for d in lRecords:

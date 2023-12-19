@@ -196,8 +196,8 @@ class Media(Record_MySQL.Record):
 		return self._filename(self._dRecord, size)
 
 	@classmethod
-	def filter(cls, options: dict, custom: dict = {}) -> List[dict]:
-		"""Filter
+	def search(cls, options: dict, custom: dict = {}) -> List[dict]:
+		"""Search
 
 		Fetches media files based on options
 
@@ -229,6 +229,8 @@ class Media(Record_MySQL.Record):
 			)
 		if 'mine' in options and options['mine']:
 			lWhere.append("`uploader` = '%s'" % options['mine'])
+		if 'images_only' in options:
+			lWhere.append('`image` IS NOT NULL')
 
 		# If we have nothing
 		if not lWhere:
@@ -242,8 +244,6 @@ class Media(Record_MySQL.Record):
 			'table': dStruct['table'],
 			'where': ' AND '.join(lWhere)
 		}
-
-		print(sSQL)
 
 		# Fetch the records
 		lRecords = Record_MySQL.Commands.select(
