@@ -2,19 +2,18 @@
 	"__sql__": {
 		"auto_primary": "UUID()",
 		"changes": [ "user" ],
-		"create": [ "_creator", "_created", "published", "category" ],
+		"create": [ "_creator", "_created", "published" ],
 		"db": "blog",
 		"host": "blog",
 		"indexes": {
 			"_creator": null,
 			"_created": null,
-			"category": null,
 			"published": null
 		},
 		"primary": "_id",
 		"table": "blog_post",
 		"charset": "utf8mb4",
-		"collate": "utf8mb4_unicode_ci"
+		"collate": "utf8mb4_bin"
 	},
 
 	"__name__": "Blog_Post",
@@ -42,9 +41,5 @@
 		"__sql__": {
 			"opts": "null default 0"
 		}
-	},
-
-	"category": {
-		"__type__": "uuid"
 	}
 }

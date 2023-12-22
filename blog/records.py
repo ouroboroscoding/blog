@@ -290,6 +290,34 @@ class Post(Record_MySQL.Record):
 		# Return the config
 		return cls._conf
 
+class PostCategory(Record_MySQL.Record):
+	"""Post Category
+
+	Represents an association between a blog post and a category
+
+	Extends:
+		Record_MySQL.Record
+	"""
+
+	_conf = Record_MySQL.Record.generate_config(
+		Tree.fromFile('%s/post_category.json' % _defPath),
+		override={ 'db': config.mysql.db('brain') }
+	)
+	"""Static Configuration"""
+
+	@classmethod
+	def config(cls):
+		"""Config
+
+		Returns the configuration data associated with the record type
+
+		Returns:
+			dict
+		"""
+
+		# Return the config
+		return cls._conf
+
 class PostLocale(Record_MySQL.Record):
 	"""Post Locale
 

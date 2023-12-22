@@ -96,7 +96,8 @@ def run():
 		'/admin/category': { 'methods': REST.CREATE | REST.DELETE | REST.READ },
 		'/admin/category/locale': { 'methods': REST.CREATE | REST.DELETE | REST.UPDATE },
 
-		'/admin/post': { 'methods': REST.ALL },
+		'/admin/post': { 'methods': REST.CREATE | REST.DELETE | REST.READ },
+		'/admin/post/category': { 'methods': REST.CREATE | REST.DELETE },
 		'/admin/post/filter': { 'methods': REST.READ },
 		'/admin/post/locale': { 'methods': REST.ALL },
 		'/admin/post/publish': { 'methods': REST.UPDATE },

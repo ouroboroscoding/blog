@@ -36,7 +36,7 @@ from .errors import MINIMUM_LOCALE, NOT_AN_IMAGE, POSTS_ASSOCIATED, \
 
 # Record classes
 from .records import Category, CategoryLocale, Comment, Media, Post, \
-	PostLocale, PostLocaleTag
+	PostCategory, PostLocale, PostLocaleTag
 
 # Figure out storage system
 _storage_type = config.blog.storage('S3')
@@ -65,6 +65,21 @@ class Blog(Service):
 		Returns:
 			Blog
 		"""
+
+		# Get config
+		self._conf = config.blog({
+			'user_default_locale': 'en-US',
+			'redis_host': 'blog'
+		})
+
+		# Create a connection to Redis
+		self._redis = StrictRedis(**config.redis[self._conf['redis_host']]({
+			'host': 'localhost',
+			'port': 6379,
+			'db': 0
+		}))
+
+		# Return self for chaining
 		return self
 
 	def admin_category_create(self, req: dict) -> Response:
@@ -1096,3 +1111,151 @@ class Blog(Service):
 
 		# Return the URL
 		return Response(sURL)
+
+	def admin_post_create(self, req: dict) -> Response:
+		"""Post create
+
+		Creates a new Post
+
+		Arguments:
+			req (dict): The request details, which can include 'data', \
+				'environment', and 'session'
+
+		Returns:
+			Services.Response
+		"""
+
+		# Make sure the user is signed in and has access
+		access.verify(req['session'], 'blog_post', access.CREATE)
+
+		# Check the minimum fields
+		try: evaluate(req['data'], ['locale', 'slug', 'content'])
+		except ValueError as e:
+			return Error(
+				errors.DATA_FIELDS, [ [ s, 'missing' ] for s in e.args ]
+			)
+
+		# Init the locale data
+		dLocale = { 'content': req['data']['content'] }
+
+		# Make sure the slug doesn't already exist
+		if PostLocale.exists(req['data']['slug'], 'slug'):
+			return Error(errors.DB_DUPLICATE, [ req['data']['slug'], 'slug' ])
+
+		# Set the slug
+		dLocale['slug'] = req['data']['slug']
+
+		# Check for the locale
+		oResponse = Services.read('mouth', 'locale/exists', {
+			'_id': req['data']['locale']
+		})
+
+		# If it doesn't exist on mouth
+		if not oResponse.data:
+			return Error(
+				errors.DB_NO_RECORD, [ req['data']['locale'], 'locale' ]
+			)
+
+		# Set the locale
+		dLocale['_locale'] = req['data']['locale']
+
+		# If there's any categories sent
+		if 'categories' in req['data'] and req['data']['categories']:
+
+			# Readability
+			lCats = req['data']['categories']
+
+			# Check the values are unique
+			if len(set(lCats)) != len(lCats):
+				return Error(
+					errors.DATA_FIELDS, [ [ 'categories', 'not unique']]
+				)
+
+			# Get all the IDs
+			lRecords = [ d['_id'] for d in Category.get(
+				lCats, raw = [ '_id' ]
+			) ]
+
+			# If the counts don't match
+			if len(lRecords) != len(lCats):
+				return Error(
+					errors.DB_NO_RECORD,
+					[ [ c for c in lCats if c not in lRecords ], 'category' ]
+				)
+
+		# Create the post instance and create the record to get an ID for the
+		#	content and categories
+		oPost = Post({
+			'_creator': req['session']['user']['_id']
+		})
+		sPostID = oPost.create(changes = { 'user': req['session']['user']['_id'] })
+
+		# If there's any categories sent
+		if 'categories' in req['data'] and req['data']['categories']:
+
+			# Add them to the post
+			PostCategory.create_many([
+				PostCategory({ '_post': sPostID, '_category': s }) \
+				for s in req['data']['categories']
+			])
+
+		# Create the primary locale
+		oLocale = PostLocale(dLocale)
+		sLocaleID = oLocale.create( changes = {
+			'user': req['session']['user']['_id']
+		})
+
+		# If we have tags
+		if 'tags' in req['data'] and req['data']['tags']:
+
+			# Add them to the post locale
+			PostLocaleTag.create_many([
+				PostLocaleTag({ '_post_locale': sLocaleID, 'name': s }) \
+				for s in req['data']['tags']
+			])
+
+		# Return the new ID
+		return Response(sPostID)
+
+	def admin_post_delete(self, req: dict) -> Response:
+		"""Post delete
+
+		Deletes an existing Post
+
+		Arguments:
+			req (dict): The request details, which can include 'data', \
+				'environment', and 'session'
+
+		Returns:
+			Services.Response
+		"""
+
+		# Make sure the user is signed in and has access
+		access.verify(req['session'], 'blog_post', access.DELETE)
+
+		# If the ID is missing
+		if '_id' not in req['data']:
+			return Error(errors.DATA_FIELDS, [ [ '_id', 'missing' ] ])
+
+		# Fetch the record
+		oPost = Post.get(req['data']['_id'])
+
+		# If it doesn't exist
+		if not oPost:
+			return Error(errors.DB_NO_RECORD, [ req['data']['_id'], 'post' ])
+
+		# Fetch the locales associated
+		lLocales = PostLocale.filter({ '_post': oPost['_id'] }, raw = [ '_id' ])
+
+		# Delete all the tags associated
+		PostLocaleTag.delete_get([ d['_id'] for d in lLocales ], '_post_locale')
+
+		# Delete the locales
+		PostLocale.delete_get([ d['_id'] for d in lLocales ])
+
+		# Delete all the categories associated
+		PostCategory.delete_get(oPost['_id'], '_post')
+
+		# Delete the post
+		oPost.delete()
+

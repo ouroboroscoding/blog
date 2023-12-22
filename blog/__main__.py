@@ -36,8 +36,7 @@ def cli():
 
 	# Get Blog config
 	dConfig = config.blog({
-		'mysql_host': 'blog',
-		'redis_host': 'blog'
+		'mysql_host': 'blog'
 	})
 
 	# Get the data path

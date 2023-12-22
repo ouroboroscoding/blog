@@ -1,0 +1,25 @@
+{
+	"__sql__": {
+		"auto_primary": false,
+		"create": [ "_post", "_category" ],
+		"db": "blog",
+		"host": "blog",
+		"indexes": {
+			"post_category": { "unique": [ "_post", "_category" ] }
+		},
+		"primary": false,
+		"table": "blog_post_category",
+		"charset": "utf8mb4",
+		"collate": "utf8mb4_bin"
+	},
+
+	"__name__": "Blog_Post_Category",
+
+	"_post": {
+		"__type__": "uuid"
+	},
+
+	"_category": {
+		"__type__": "uuid"
+	}
+}
