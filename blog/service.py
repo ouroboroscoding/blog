@@ -1136,7 +1136,10 @@ class Blog(Service):
 			)
 
 		# Init the locale data
-		dLocale = { 'content': req['data']['content'] }
+		dLocale = {
+			'content': req['data']['content'],
+			'title': req['data']['title']
+		}
 
 		# Make sure the slug doesn't already exist
 		if PostLocale.exists(req['data']['slug'], 'slug'):
@@ -1146,9 +1149,9 @@ class Blog(Service):
 		dLocale['slug'] = req['data']['slug']
 
 		# Check for the locale
-		oResponse = Services.read('mouth', 'locale/exists', {
+		oResponse = Services.read('mouth', 'locale/exists', { 'data': {
 			'_id': req['data']['locale']
-		})
+		}})
 
 		# If it doesn't exist on mouth
 		if not oResponse.data:
@@ -1200,6 +1203,7 @@ class Blog(Service):
 			])
 
 		# Create the primary locale
+		dLocale['_post'] = oPost['_id']
 		oLocale = PostLocale(dLocale)
 		sLocaleID = oLocale.create( changes = {
 			'user': req['session']['user']['_id']

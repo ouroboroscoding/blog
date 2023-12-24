@@ -39,8 +39,10 @@ def install():
 	Comment.table_create()
 	Media.table_create()
 	Post.table_create()
+	PostCategory.table_create()
 	PostLocale.table_create()
 	PostLocaleTag.table_create()
+	PostPublish.table_create()
 
 class Category(Record_MySQL.Record):
 	"""Category
@@ -358,6 +360,34 @@ class PostLocaleTag(Record_MySQL.Record):
 
 	_conf = Record_MySQL.Record.generate_config(
 		Tree.fromFile('%s/post_locale_tag.json' % _defPath),
+		override={ 'db': config.mysql.db('brain') }
+	)
+	"""Static Configuration"""
+
+	@classmethod
+	def config(cls):
+		"""Config
+
+		Returns the configuration data associated with the record type
+
+		Returns:
+			dict
+		"""
+
+		# Return the config
+		return cls._conf
+
+class PostPublish(Record_MySQL.Record):
+	"""Post Publish
+
+	Represents a published version of the post
+
+	Extends:
+		Record_MySQL.Record
+	"""
+
+	_conf = Record_MySQL.Record.generate_config(
+		Tree.fromFile('%s/post_publish.json' % _defPath),
 		override={ 'db': config.mysql.db('brain') }
 	)
 	"""Static Configuration"""

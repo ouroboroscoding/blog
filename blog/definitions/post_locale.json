@@ -81,6 +81,7 @@
 			"__options__": [ "description", "image", "title", "url" ]
 		},
 		"__type__": "string",
+		"__optional__": true,
 		"__sql__": {
 			"json": true
 		}

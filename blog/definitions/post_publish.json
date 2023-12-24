@@ -1,0 +1,46 @@
+{
+	"__sql__": {
+		"auto_primary": false,
+		"changes": [ "user" ],
+		"create": [ "_created", "_updated", "data" ],
+		"db": "blog",
+		"host": "blog",
+		"indexes": { },
+		"primary": "_slug",
+		"table": "blog_post_publish",
+		"charset": "utf8mb4",
+		"collate": "utf8mb4_bin"
+	},
+
+	"__name__": "Blog_Post_Publish",
+
+	"_slug": {
+		"__type__": "string",
+		"__maximum__": 128,
+		"__regex__": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+		"__sql__": {
+			"type": "varchar(128)"
+		}
+	},
+
+	"_created": {
+		"__type__": "timestamp",
+		"__optional__": true,
+		"__sql__": {
+			"opts": "not null default CURRENT_TIMESTAMP"
+		}
+	},
+
+	"_updated": {
+		"__type__": "timestamp",
+		"__optional__": true,
+		"__sql__": {
+			"opts": "not null default CURRENT_TIMESTAMP on update CURRENT_TIMESTAMP"
+		}
+	},
+
+	"data": {
+		"__type__": "string",
+		"__maximum__": 16777215
+	}
+}
