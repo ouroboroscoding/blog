@@ -40,9 +40,8 @@ def install():
 	Media.table_create()
 	Post.table_create()
 	PostCategory.table_create()
-	PostLocale.table_create()
-	PostLocaleTag.table_create()
-	PostPublish.table_create()
+	PostRaw.table_create()
+	PostTag.table_create()
 
 class Category(Record_MySQL.Record):
 	"""Category
@@ -320,18 +319,18 @@ class PostCategory(Record_MySQL.Record):
 		# Return the config
 		return cls._conf
 
-class PostLocale(Record_MySQL.Record):
-	"""Post Locale
+class PostRaw(Record_MySQL.Record):
+	"""Post Raw
 
-	Represents the text data for a specific locale associated with a post. \
-	i.e. translation data for a single locale
+	Represents the raw data with all locales, categories, and tags used to \
+	make posts
 
 	Extends:
 		Record_MySQL.Record
 	"""
 
 	_conf = Record_MySQL.Record.generate_config(
-		Tree.fromFile('%s/post_locale.json' % _defPath),
+		Tree.fromFile('%s/post_raw.json' % _defPath),
 		override={ 'db': config.mysql.db('brain') }
 	)
 	"""Static Configuration"""
@@ -349,45 +348,17 @@ class PostLocale(Record_MySQL.Record):
 		# Return the config
 		return cls._conf
 
-class PostLocaleTag(Record_MySQL.Record):
-	"""Post Locale Tag
+class PostTag(Record_MySQL.Record):
+	"""Post Tag
 
-	Represents a tag and the post translation it's associated with
-
-	Extends:
-		Record_MySQL.Record
-	"""
-
-	_conf = Record_MySQL.Record.generate_config(
-		Tree.fromFile('%s/post_locale_tag.json' % _defPath),
-		override={ 'db': config.mysql.db('brain') }
-	)
-	"""Static Configuration"""
-
-	@classmethod
-	def config(cls):
-		"""Config
-
-		Returns the configuration data associated with the record type
-
-		Returns:
-			dict
-		"""
-
-		# Return the config
-		return cls._conf
-
-class PostPublish(Record_MySQL.Record):
-	"""Post Publish
-
-	Represents a published version of the post
+	Represents a tag and the post it's associated with
 
 	Extends:
 		Record_MySQL.Record
 	"""
 
 	_conf = Record_MySQL.Record.generate_config(
-		Tree.fromFile('%s/post_publish.json' % _defPath),
+		Tree.fromFile('%s/post_tag.json' % _defPath),
 		override={ 'db': config.mysql.db('brain') }
 	)
 	"""Static Configuration"""

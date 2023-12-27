@@ -1,0 +1,102 @@
+{
+	"__sql__": {
+		"auto_primary": "UUID()",
+		"changes": [ "user" ],
+		"create": [
+			"_created", "_updated", "last_published", "categories", "locales"
+		],
+		"db": "blog",
+		"host": "blog",
+		"indexes": {
+			"_created": null,
+			"_updated": null,
+			"last_published": null
+		},
+		"primary": "_id",
+		"table": "blog_post_raw",
+		"charset": "utf8mb4",
+		"collate": "utf8mb4_bin"
+	},
+
+	"__name__": "Blog_Post_Raw",
+
+	"_id": {
+		"__type__": "uuid",
+		"__optional__": true
+	},
+
+	"_created": {
+		"__type__": "timestamp",
+		"__optional__": true,
+		"__sql__": {
+			"opts": "not null default CURRENT_TIMESTAMP"
+		}
+	},
+
+	"_updated": {
+		"__type__": "timestamp",
+		"__optional__": true,
+		"__sql__": {
+			"opts": "not null default CURRENT_TIMESTAMP on update CURRENT_TIMESTAMP"
+		}
+	},
+
+	"last_published": {
+		"__type__": "timestamp",
+		"__optional__": true
+	},
+
+	"categories": {
+		"__array__": "unique",
+		"__type__": "uuid",
+		"__optional__": true,
+		"__sql__": {
+			"json": true
+		}
+	},
+
+	"locales": {
+		"__hash__": {
+			"__type__": "string",
+			"__regex__": "^[a-z]{2}-[A-Z]{2}$"
+		},
+
+		"slug": {
+			"__type__": "string",
+			"__maximum__": 128,
+			"__regex__": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+			"__sql__": {
+				"type": "varchar(128)"
+			}
+		},
+
+		"title": {
+			"__type__": "string",
+			"__maximum__": 255
+		},
+
+		"content": {
+			"__type__": "string",
+			"__maximum__": 20000
+		},
+
+		"meta": {
+			"__hash__": {
+				"__type__": "string",
+				"__options__": [ "description", "image", "title", "url" ]
+			},
+			"__type__": "string",
+			"__optional__": true
+		},
+
+		"tags": {
+			"__array__": "unique",
+			"__type__": "string",
+			"__regex__": "^\\S+(?: \\S+)*$"
+		},
+
+		"__sql__": {
+			"json": true
+		}
+	}
+}

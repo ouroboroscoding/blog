@@ -1,0 +1,43 @@
+{
+	"__sql__": {
+		"auto_primary": false,
+		"create": [ "_slug", "_locale", "tag" ],
+		"db": "blog",
+		"host": "blog",
+		"indexes": {
+			"slug_name": { "unique": [ "_slug", "tag" ] },
+			"_locale": null
+		},
+		"primary": false,
+		"table": "blog_post_tag",
+		"charset": "utf8mb4",
+		"collate": "utf8mb4_bin"
+	},
+
+	"__name__": "Blog_Post_Tag",
+
+	"_slug": {
+		"__type__": "string",
+		"__maximum__": 128,
+		"__regex__": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+		"__sql__": {
+			"type": "varchar(128)"
+		}
+	},
+
+	"_locale": {
+		"__type__": "string",
+		"__regex__": "^[a-z]{2}-[A-Z]{2}$",
+		"__sql__": {
+			"type": "char(5)"
+		}
+	},
+
+	"tag": {
+		"__type__": "string",
+		"__regex__": "^\\S+(?: \\S+)*$",
+		"__sql__": {
+			"type": "varchar(32)"
+		}
+	}
+}

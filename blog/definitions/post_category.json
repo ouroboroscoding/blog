@@ -1,11 +1,11 @@
 {
 	"__sql__": {
 		"auto_primary": false,
-		"create": [ "_post", "_category" ],
+		"create": [ "_slug", "_category" ],
 		"db": "blog",
 		"host": "blog",
 		"indexes": {
-			"post_category": { "unique": [ "_post", "_category" ] }
+			"slug_category": { "unique": [ "_slug", "_category" ] }
 		},
 		"primary": false,
 		"table": "blog_post_category",
@@ -15,8 +15,13 @@
 
 	"__name__": "Blog_Post_Category",
 
-	"_post": {
-		"__type__": "uuid"
+	"_slug": {
+		"__type__": "string",
+		"__maximum__": 128,
+		"__regex__": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+		"__sql__": {
+			"type": "varchar(128)"
+		}
 	},
 
 	"_category": {
