@@ -96,11 +96,10 @@ def run():
 		'/admin/category': { 'methods': REST.CREATE | REST.DELETE | REST.READ },
 		'/admin/category/locale': { 'methods': REST.CREATE | REST.DELETE | REST.UPDATE },
 
-		'/admin/post': { 'methods': REST.CREATE | REST.DELETE | REST.READ },
-		'/admin/post/category': { 'methods': REST.CREATE | REST.DELETE },
+		'/admin/post': { 'methods': REST.ALL },
 		'/admin/post/filter': { 'methods': REST.READ },
-		'/admin/post/locale': { 'methods': REST.ALL },
 		'/admin/post/publish': { 'methods': REST.UPDATE },
+		'/admin/post/unpublished': { 'methods': REST.READ },
 
 		'/admin/media': { 'methods': REST.CREATE | REST.DELETE | REST.READ },
 		'/admin/media/filter': { 'methods': REST.READ },
@@ -110,7 +109,7 @@ def run():
 		},
 		'blog',
 		'https?://(.*\\.)?%s' % config.rest.allowed('localhost').replace('.', '\\.'),
-		error_callback=errors.service_error
+		error_callback = errors.service_error
 	).run(
 		host=oRestConf['blog']['host'],
 		port=oRestConf['blog']['port'],

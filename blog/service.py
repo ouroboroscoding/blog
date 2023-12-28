@@ -1129,12 +1129,9 @@ class Blog(Service):
 		# Make sure the user is signed in and has access
 		access.verify(req['session'], 'blog_post', access.CREATE)
 
-		# Check the minimum fields
-		try: evaluate(req['data'], ['locales'])
-		except ValueError as e:
-			return Error(
-				errors.DATA_FIELDS, [ [ s, 'missing' ] for s in e.args ]
-			)
+		# Make sure we have locales at minimum
+		if 'locales' not in req['data']:
+			return Error(errors.DATA_FIELDS, [ [ 'locales', 'missing' ] ])
 
 		# Init list of locales
 		lLocales = []
@@ -1187,13 +1184,13 @@ class Blog(Service):
 					[ [ c for c in lCats if c not in lRecords ], 'category' ]
 				)
 
-		# Create the raw post instance and create the record
+		# Test the values by making the raw post instance
 		try:
 			oPostRaw = PostRaw(req['data'])
 		except ValueError as e:
 			return Error(errors.DATA_FIELDS, e.args[0])
 
-		# Create the raw post and store the ID
+		# Create the instance and store the ID
 		sID = oPostRaw.create(
 			changes = { 'user': req['session']['user']['_id'] }
 		)
@@ -1204,128 +1201,6 @@ class Blog(Service):
 
 		# Return the new ID
 		return Response(sID)
-
-	def admin_post_category_create(self, req: dict) -> Response:
-		"""Post Category create
-
-		Adds an existing category to a raw blog post
-
-		Arguments:
-			req (dict): The request details, which can include 'data', \
-				'environment', and 'session'
-
-		Returns:
-			Services.Response
-		"""
-
-		# Make sure the user is signed in and has access
-		access.verify(req['session'], 'blog_post', access.UPDATE)
-
-		# Check the minimum fields
-		try: evaluate(req['data'], ['_id', 'category'])
-		except ValueError as e:
-			return Error(
-				errors.DATA_FIELDS, [ [ s, 'missing' ] for s in e.args ]
-			)
-
-		# Find the raw post
-		oPostRaw = PostRaw.get(req['data']['_id'])
-		if not oPostRaw:
-			return Error(
-				errors.DB_NO_RECORD, [ req['data']['_id'], 'post_raw' ]
-			)
-
-		# If the category is already in the list
-		if req['data']['category'] in oPostRaw['categories']:
-			return Error(
-				errors.DB_DUPLICATE, [ req['data']['category'], 'category' ]
-			)
-
-		# Check the category exists
-		if not Category.exists(req['data']['category']):
-			return Error(
-				errors.DB_NO_RECORD, [ req['data']['category'], 'category' ]
-			)
-
-		# Add it to the list
-		lCategories = oPostRaw['categories'][:]
-		lCategories.append(req['data']['category'])
-
-		# Update the record
-		try:
-			oPostRaw['categories'] = lCategories
-		except ValueError as e:
-			return Error(errors.DATA_FIELDS, e.args[0])
-
-		# Save the record and store the result
-		bRes = oPostRaw.save(
-			changes = { 'user': req['session']['user']['_id'] }
-		)
-
-		# If the record wasn't saved
-		if not bRes:
-			return Error(errors.DB_UPDATE_FAILED, 'post_raw')
-
-		# Return OK
-		return Response(True)
-
-	def admin_post_category_delete(self, req: dict) -> Response:
-		"""Post Category delete
-
-		Removes an existing category from a raw blog post
-
-		Arguments:
-			req (dict): The request details, which can include 'data', \
-				'environment', and 'session'
-
-		Returns:
-			Services.Response
-		"""
-
-		# Make sure the user is signed in and has access
-		access.verify(req['session'], 'blog_post', access.UPDATE)
-
-		# Check the minimum fields
-		try: evaluate(req['data'], ['_id', 'category'])
-		except ValueError as e:
-			return Error(
-				errors.DATA_FIELDS, [ [ s, 'missing' ] for s in e.args ]
-			)
-
-		# Find the raw post
-		oPostRaw = PostRaw.get(req['data']['_id'])
-		if not oPostRaw:
-			return Error(
-				errors.DB_NO_RECORD, [ req['data']['_id'], 'post_raw' ]
-			)
-
-		# If the category is not already in the list
-		if req['data']['category'] not in oPostRaw['categories']:
-			return Error(
-				errors.ALREADY_DONE, [ req['data']['category'], 'category' ]
-			)
-
-		# Removed it from the list
-		lCategories = oPostRaw['categories'][:]
-		lCategories.remove(req['data']['category'])
-
-		# Update the record
-		try:
-			oPostRaw['categories'] = lCategories
-		except ValueError as e:
-			return Error(errors.DATA_FIELDS, e.args[0])
-
-		# Save the record and store the result
-		bRes = oPostRaw.save(
-			changes = { 'user': req['session']['user']['_id'] }
-		)
-
-		# If the record wasn't saved
-		if not bRes:
-			return Error(errors.DB_UPDATE_FAILED, 'post_raw')
-
-		# Return OK
-		return Response(True)
 
 	def admin_post_delete(self, req: dict) -> Response:
 		"""Post delete
@@ -1411,3 +1286,135 @@ class Blog(Service):
 
 		# Return the post
 		return Response(dPostRaw)
+
+	def admin_post_unpublished_read(self, req: dict) -> Response:
+		"""Post Unpublished read
+
+		Returns all posts that have never been published, or have unpublished \
+		changes
+
+		Arguments:
+			req (dict): The request details, which can include 'data', \
+				'environment', and 'session'
+
+		Returns:
+			Services.Response
+		"""
+
+		# Make sure the user is signed in and has access
+		access.verify(req['session'], 'blog_post', access.READ)
+
+		# Fetch all the raw posts that have never been published, or whose
+		#	last updated time is newer than the last published time, and return
+		#	them
+		return Response(
+			PostRaw.unpublished()
+		)
+
+	def admin_post_update(self, req: dict) -> Response:
+		"""Post update
+
+		Updates an existing raw post
+
+		Arguments:
+			req (dict): The request details, which can include 'data', \
+				'environment', and 'session'
+
+		Returns:
+			Services.Response
+		"""
+
+		# Make sure the user is signed in and has access
+		access.verify(req['session'], 'blog_post', access.UPDATE)
+
+		# Make sure we have the ID
+		if '_id' not in req['data']:
+			return Error(errors.DATA_FIELDS, [ [ '_id', 'missing' ] ])
+
+		# Find the post
+		oPost = PostRaw.get(req['data']['_id'])
+		if not oPost:
+			return Error(
+				errors.DB_NO_RECORD, [ req['data']['_id'], 'post_raw' ]
+			)
+
+		# Init possible errors
+		lErrors = []
+
+		# If we have categories
+		if 'categories' in req['data']:
+
+			# Readability
+			lCats = req['data']['categories']
+
+			# Check the values are unique
+			if len(set(lCats)) != len(lCats):
+				return Error(
+					errors.DATA_FIELDS, [ [ 'categories', 'not unique']]
+				)
+
+			# Get all the IDs
+			lRecords = [ d['_id'] for d in Category.get(
+				lCats, raw = [ '_id' ]
+			) ]
+
+			# If the counts don't match
+			if len(lRecords) != len(lCats):
+				return Error(
+					errors.DB_NO_RECORD,
+					[ [ c for c in lCats if c not in lRecords ], 'category' ]
+				)
+
+			# Set categories
+			try:
+				oPost['categories'] = req['data']['categories']
+			except ValueError as e:
+				lErrors.extend(e.args[0])
+
+		# If we have locales
+		if 'locales' in req['data']:
+
+			# Set locales
+			try:
+				oPost['locales'] = req['data']['locales']
+
+				# Go through each locale
+				dSlugs = {}
+				for k in oPost['locales']:
+					if oPost['locales'][k]['slug'] in dSlugs:
+						lErrors.append(
+							[ 'locales.%s.slug' % k, 'duplicate' ]
+						)
+					else:
+						dSlugs[oPost['locales'][k]['slug']] = k
+
+				# If there's no errors within the post
+				if not lErrors:
+
+					# Check if any of them exist on other posts
+					lPosts = Post.get(list(dSlugs.keys()), filter = {
+						'_raw': { 'neq': oPost['_id'] }
+					}, raw = [ '_slug' ])
+
+					# If we got any
+					if lPosts:
+						for d in lPosts:
+							lErrors.append([
+								'locales.%s.slug' % dSlugs[d['_slug']],
+								'duplicate'
+							])
+
+			except ValueError as e:
+				lErrors.extend(e.args[0])
+
+		# If we got any errors
+		if lErrors:
+			return Error(errors.DATA_FIELDS, lErrors)
+
+		# Save the record and store the result
+		bRes = oPost.save( changes = { 'user': req['session']['user']['_id'] })
+		if not bRes:
+			return Error(errors.DB_UPDATE_FAILED)
+
+		# Return OK
+		return Response(True)

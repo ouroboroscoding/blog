@@ -348,6 +348,58 @@ class PostRaw(Record_MySQL.Record):
 		# Return the config
 		return cls._conf
 
+	@classmethod
+	def unpublished(cls, custom = {}):
+		"""Unpublished
+
+		Returns raw blog posts that haven't been published, or that have \
+		unpublished changes
+
+		Arguments:
+			custom (dict): Custom Host and DB info
+				'host' the name of the host to get/set data on
+				'append' optional postfix for dynamic DBs
+
+		Returns:
+			list
+		"""
+
+		# Get the structure
+		dStruct = cls.struct(custom)
+
+		# Generate the SQL
+		sSQL = "SELECT * FROM `%(db)s`.`%(table)s`\n" \
+				"WHERE `last_published` IS NULL\n" \
+				"OR `_updated` > `last_published`\n" \
+				"ORDER BY `_updated`" % {
+			'db': dStruct['db'],
+			'table': dStruct['table']
+		}
+
+		# Fetch the records
+		lRecords = Record_MySQL.Commands.select(
+			dStruct['host'],
+			sSQL,
+			Record_MySQL.ESelect.ALL
+		)
+
+		# If there's no records, return
+		if not lRecords:
+			return []
+
+		# Go through each record
+		for d in lRecords:
+
+			# If we have categories, decode them
+			if 'categories' in d:
+				d['categories'] = jsonb.decode(d['categories'])
+
+			# Decode the locales
+			d['locales'] = jsonb.decode(d['locales'])
+
+		# Return the records
+		return lRecords
+
 class PostTag(Record_MySQL.Record):
 	"""Post Tag
 
