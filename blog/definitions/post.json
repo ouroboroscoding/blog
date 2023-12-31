@@ -1,16 +1,20 @@
 {
 	"__sql__": {
 		"auto_primary": false,
-		"create": [ "_slug", "_raw", "_created", "_updated", "content" ],
+		"create": [
+			"_slug", "_raw", "_locale", "_created", "_updated", "title",
+			"content", "meta"
+		],
 		"db": "blog",
 		"host": "blog",
 		"indexes": {
-			"_raw": null
+			"_raw": null,
+			"_locale": null
 		},
 		"primary": "_slug",
 		"table": "blog_post",
 		"charset": "utf8mb4",
-		"collate": "utf8mb4_bin"
+		"collate": "utf8mb4_unicode_ci"
 	},
 
 	"__name__": "Blog_Post",
@@ -26,6 +30,14 @@
 
 	"_raw": {
 		"__type__": "uuid"
+	},
+
+	"_locale": {
+		"__type__": "string",
+		"__regex__": "^[a-z]{2}-[A-Z]{2}$",
+		"__sql__": {
+			"type": "char(5)"
+		}
 	},
 
 	"_created": {
@@ -44,11 +56,28 @@
 		}
 	},
 
+	"title": {
+		"__type__": "string",
+		"__maximum__": 255
+	},
+
 	"content": {
 		"__type__": "string",
 		"__maximum__": 20000,
 		"__sql__": {
 			"type": "text"
+		}
+	},
+
+	"meta": {
+		"__hash__": {
+			"__type__": "string",
+			"__options__": [ "description", "image", "title", "url" ]
+		},
+		"__type__": "string",
+		"__optional__": true,
+		"__sql__": {
+			"json": true
 		}
 	}
 }

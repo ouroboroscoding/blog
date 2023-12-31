@@ -1,12 +1,11 @@
 {
 	"__sql__": {
 		"auto_primary": false,
-		"create": [ "_slug", "_locale", "tag" ],
+		"create": [ "_slug", "tag" ],
 		"db": "blog",
 		"host": "blog",
 		"indexes": {
-			"slug_name": { "unique": [ "_slug", "tag" ] },
-			"_locale": null
+			"slug_name": { "unique": [ "_slug", "tag" ] }
 		},
 		"primary": false,
 		"table": "blog_post_tag",
@@ -22,14 +21,6 @@
 		"__regex__": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
 		"__sql__": {
 			"type": "varchar(128)"
-		}
-	},
-
-	"_locale": {
-		"__type__": "string",
-		"__regex__": "^[a-z]{2}-[A-Z]{2}$",
-		"__sql__": {
-			"type": "char(5)"
 		}
 	},
 

@@ -13,6 +13,7 @@ __created__		= "2023-11-27"
 # Ouroboros imports
 from config import config
 import jsonb
+from tools import without
 
 # Python imports
 import os
@@ -277,6 +278,116 @@ class Post(Record_MySQL.Record):
 		override={ 'db': config.mysql.db('brain') }
 	)
 	"""Static Configuration"""
+
+	@classmethod
+	def by_raw(cls, _id, custom = {}):
+		"""By Raw
+
+		Fetches all posts, their categories, and their tags by the posts raw ID
+
+		Arguments:
+			_id (str): The ID of the PostRaw record
+			custom (dict): Custom Host and DB info
+				'host' the name of the host to get/set data on
+				'append' optional postfix for dynamic DBs
+
+		Returns:
+			dict of slugs+locale to dict of post / categories / tags
+		"""
+
+		# Init the results
+		dResults = {}
+
+		# Get the structure
+		dStruct = cls.struct(custom)
+
+		# Escape the ID
+		sID = Record_MySQL.Commands.escape(dStruct['host'], _id)
+
+		# Generate the SQL to fetch the posts
+		sSQL = "SELECT * FROM `%(db)s`.`%(table)s`\n" \
+				"WHERE `_raw` = '%(id)s'" % {
+			'db': dStruct['db'],
+			'table': dStruct['table'],
+			'id': sID
+		}
+
+		# Fetch the records
+		lRecords = Record_MySQL.Commands.select(
+			dStruct['host'],
+			sSQL,
+			Record_MySQL.ESelect.ALL
+		)
+
+		# Go through each one and store it by slug and locale
+		for d in lRecords:
+
+			# Generate the unique string
+			sSlugLocale = '%s:%s' % (d['_slug'], d['_locale'])
+
+			# Add empty category and tag lists
+			d['categories'] = []
+			d['tags'] = []
+
+			# Add it to the results
+			dResults[sSlugLocale] = d
+
+		# Generate the SQL to fetch the categories
+		sSQL = "SELECT `p`.`_slug`, `p`.`_locale`, `pc`.`_category`\n" \
+				"FROM `%(db)s`.`%(table)s` as `p`\n" \
+				"JOIN `%(db)s`.`%(table)s_category` as `pc` ON" \
+				" `p`.`_slug` = `pc`.`_slug`\n" \
+				"WHERE `p`.`_raw` = '%(id)s'" % {
+			'db': dStruct['db'],
+			'table': dStruct['table'],
+			'id': sID
+		}
+
+		# Fetch the records
+		lRecords = Record_MySQL.Commands.select(
+			dStruct['host'],
+			sSQL,
+			Record_MySQL.ESelect.ALL
+		)
+
+		# Go through each one
+		for d in lRecords:
+
+			# Generate the unique string
+			sSlugLocale = '%s:%s' % (d['_slug'], d['_locale'])
+
+			# Add the category to the post
+			dResults[sSlugLocale].categories.append(d['_category'])
+
+		# Generate the SQL to fetch the tags
+		sSQL = "SELECT `p`.`_slug`, `p`.`_locale`, `pt`.`tag`\n" \
+				"FROM `%(db)s`.`%(table)s` as `p`\n" \
+				"JOIN `%(db)s`.`%(table)s_tag` as `pt` ON" \
+				" `p`.`_slug` = `pt`.`_slug`\n" \
+				"WHERE `p`.`_raw` = '%(id)s'" % {
+			'db': dStruct['db'],
+			'table': dStruct['table'],
+			'id': sID
+		}
+
+		# Fetch the records
+		lRecords = Record_MySQL.Commands.select(
+			dStruct['host'],
+			sSQL,
+			Record_MySQL.ESelect.ALL
+		)
+
+		# Go through each one
+		for d in lRecords:
+
+			# Generate the unique string
+			sSlugLocale = '%s:%s' % (d['_slug'], d['_locale'])
+
+			# Add the category to the post
+			dResults[sSlugLocale].tags.append(d['tag'])
+
+		# Return the results
+		return dResults
 
 	@classmethod
 	def config(cls):

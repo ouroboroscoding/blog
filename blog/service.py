@@ -29,7 +29,7 @@ from time import time
 from redis import StrictRedis
 from RestOC import Image, Services
 from RestOC.Services import Error, internal_key, Response, Service
-from RestOC.Record_MySQL import DuplicateException
+from RestOC.Record_MySQL import DuplicateException, Literal
 
 # Errors
 from .errors import MINIMUM_LOCALE, NOT_AN_IMAGE, POSTS_ASSOCIATED, \
@@ -1241,7 +1241,7 @@ class Blog(Service):
 		PostTag.delete_get(lSlugs, index = '_slug')
 
 		# Delete all posts associated
-		Post.delete_get(lSlugs, index = '_slug')
+		Post.delete_get(lSlugs)
 
 		# Delete the post
 		bRes = oPostRaw.delete(
@@ -1256,6 +1256,229 @@ class Blog(Service):
 
 		# Return OK
 		return Response(True)
+
+	def admin_post_publish(self, req: dict) -> Response:
+		"""Post Publish update
+
+		Takes the current saved post and makes it the live version
+
+		Arguments:
+			req (dict): The request details, which can include 'data', \
+				'environment', and 'session'
+
+		Returns:
+			Services.Response
+		"""
+
+		# Make sure the user is signed in and has access
+		access.verify(req['session'], 'blog_publish', access.UPDATE)
+
+		# If the ID is missing
+		if '_id' not in req['data']:
+			return Error(errors.DATA_FIELDS, [ [ '_id', 'missing' ] ])
+
+		# Fetch the raw post
+		oRaw = PostRaw(req['data']['_id'])
+		if not oRaw:
+			return Error(
+				errors.DB_NO_RECORD, [ req['data']['_id'], 'post_raw' ]
+			)
+
+		# If the last published date is the same as the update date, then
+		#	there's nothing to do here
+		if oRaw['last_published'] >= oRaw['_updated']:
+			return Response(False)
+
+		# Init the flag to know if anything actually changed
+		bChanges = False
+
+		# Init possible errors and a dict of slugs to locales
+		lErrors = []
+		dSlugs = {}
+
+		# Go through each locale
+		for k in oRaw['locales']:
+			if oRaw['locales'][k]['slug'] in dSlugs:
+				lErrors.append(
+					[ 'locales.%s.slug' % k, 'duplicate' ]
+				)
+			else:
+				dSlugs[oRaw['locales'][k]['slug']] = k
+
+		# If we didn't get a errors yet
+		if not lErrors:
+
+			# Check if any of the slugs exist on other posts
+			lExisting = Post.get(list(dSlugs.keys()), filter = {
+				'_raw': { 'neq': oRaw['_id'] }
+			}, raw = [ '_slug' ])
+
+			# If we got any posts at all, create an error item for each
+			#	duplicate
+			if lExisting:
+				lErrors = [ [
+					'locales.%s.slug' % dSlugs[d['_slug']],
+					'duplicate'
+				] for d in lExisting ]
+
+		# If we got any errors
+		if lErrors:
+			return Error(errors.DATA_FIELDS, lErrors)
+
+		# Get all the posts associated with this one, stored by slug
+		dPosts = Post.by_raw(req['data']['_id'])
+
+		# Init the lists of posts to create and of posts to update
+		lCreate = []
+		lUpdate = []
+
+		# Go through each locale in the raw post
+		for sLocale, dLocale in oRaw['locales'].items():
+
+			# Make a unique id from the slug and locale
+			sSlugLocale = '%s:%s' % (dLocale['_slug'], sLocale)
+
+			# Do we have this already
+			if sSlugLocale in dPosts:
+
+				# Remove the existing post and add it to the update list along
+				#	side the raw, unpublished data
+				lUpdate.append([
+					dPosts.pop(sSlugLocale),
+					dLocale
+				])
+
+			# Else, if we haven't published this locale yet, add it to the
+			#	create list
+			else:
+				lCreate.append([sLocale, dLocale])
+
+		# Do we have any published posts left?
+		if dPosts:
+
+			# Something changed
+			bChanges = True
+
+			# Go through each post that no longer has a counterpoint in the raw
+			#	data
+			for d in dPosts:
+
+				# Delete all categories, tags, and the post itself based on the
+				#	slug
+				PostCategory.delete_get(d['_slug'], index = '_slug')
+				PostTag.delete_get(d['_slug'], index = '_slug')
+				Post.delete_get(d['_slug'])
+
+		# If we have any posts to publish for the first time
+		if lCreate:
+
+			# Something changed
+			bChanges = True
+
+			# Init the list of categories, of tags, and of posts
+			lCategories = []
+			lTags = []
+			lPosts = []
+
+			# Go through each locale to create
+			for sLocale, dLocale in lCreate:
+
+				# Add the post
+				lPosts.append(Post({
+					'_slug': dLocale['slug'],
+					'_raw': oRaw['_id'],
+					'_locale': sLocale,
+					'title': dLocale['title'],
+					'content': dLocale['content'],
+					'meta': dLocale['meta']
+				}))
+
+				# Extend the categories for each one found in the raw data
+				lCategories.extend([ PostCategory({
+					'_slug': dLocale['slug'],
+					'_category': s
+				}) for s in oRaw['categories'] ])
+
+				# Extend the tags for each one found in the raw data
+				lTags.extend([ PostTag({
+					'_slug': dLocale['slug'],
+					'tag': s
+				}) for s in dLocale['tags'] ])
+
+			# Create the posts
+			Post.create_many(lPosts)
+
+			# If we have categories, create them
+			if lCategories:
+				PostCategory.create_many(lCategories)
+
+			# If we have tags, create them
+			if lTags:
+				PostTag.create_many(lTags)
+
+		# If we have any to update
+		if lUpdate:
+
+			# Go through each post to update
+			for dPost, dLocale in lUpdate:
+
+				# Remove the categories and tags
+				lCategories = dPost.pop('categories').sort()
+				lTags = dPost.pop('tags')
+
+				# Create the Post instance
+				oPost = Post(dPost)
+
+				# Go through each field and update it
+				for k in [ 'title', 'content', 'meta' ]:
+					oPost[k] = dLocale[k]
+
+				# Update the post
+				if oPost.save():
+
+					# Something changed
+					bChanges = True
+
+				# If the categories have changed
+				if lCategories != sorted(oRaw['categories']):
+
+					# Something changed
+					bChanges = True
+
+					# Delete the existing ones
+					PostCategory.delete_get(dPost['_slug'], index = '_slug')
+
+					# And add the new ones
+					PostCategory.create_many([ PostCategory({
+						'_slug': dPost['_slug'],
+						'_category': s
+					}) for s in oRaw['categories'] ])
+
+				# If the tags have changed
+				if lTags != dLocale['tags']:
+
+					# Something changed
+					bChanges = True
+
+					# Delete the existing ones
+					PostTag.delete_get(dPost['_slug'], index = '_slug')
+
+					# And add the new ones
+					PostTag.create_many([ PostTag({
+						'_slug': dPost['_slug'],
+						'tag': s
+					}) for s in dLocale['tags'] ])
+
+		# If anything got added, removed, or updated
+		if bChanges:
+
+			# Update the last published
+			oRaw['last_published'] = Literal('CURRENT_TIMESTAMP')
+			if oRaw.save(changes = { 'user': req['session']['user']['_id'] }):
+				return Response(True)
+
+		# Return failure
+		return Response(False)
 
 	def admin_post_read(self, req: dict) -> Response:
 		"""Post read
