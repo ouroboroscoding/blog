@@ -14,8 +14,10 @@ __created__		= "2023-11-27"
 from config import config
 import jsonb
 from tools import without
+import undefined
 
 # Python imports
+from operator import itemgetter
 import os
 import pathlib
 from typing import List
@@ -325,6 +327,10 @@ class Post(Record_MySQL.Record):
 			# Generate the unique string
 			sSlugLocale = '%s:%s' % (d['_slug'], d['_locale'])
 
+			# Convert the json values
+			d['meta'] = jsonb.decode(d['meta'])
+			d['locales'] = jsonb.decode(d['locales'])
+
 			# Add empty category and tag lists
 			d['categories'] = []
 			d['tags'] = []
@@ -357,7 +363,7 @@ class Post(Record_MySQL.Record):
 			sSlugLocale = '%s:%s' % (d['_slug'], d['_locale'])
 
 			# Add the category to the post
-			dResults[sSlugLocale].categories.append(d['_category'])
+			dResults[sSlugLocale]['categories'].append(d['_category'])
 
 		# Generate the SQL to fetch the tags
 		sSQL = "SELECT `p`.`_slug`, `p`.`_locale`, `pt`.`tag`\n" \
@@ -384,7 +390,7 @@ class Post(Record_MySQL.Record):
 			sSlugLocale = '%s:%s' % (d['_slug'], d['_locale'])
 
 			# Add the category to the post
-			dResults[sSlugLocale].tags.append(d['tag'])
+			dResults[sSlugLocale]['tags'].append(d['tag'])
 
 		# Return the results
 		return dResults
@@ -458,6 +464,27 @@ class PostRaw(Record_MySQL.Record):
 
 		# Return the config
 		return cls._conf
+
+	def localesToSlugs(self, ignore):
+		"""Locales to Slugs
+
+		Returns a dict of locales to their slugs, not including the ignored \
+		locale if it's passed
+
+		Arguments:
+			ignore (str): Locale to not include in the dict
+
+		Returns:
+			dict of locales to slugs
+		"""
+
+		# Create a list of the locales, skipping the one we are ignoring, and
+		#	sort them alphabetically
+		lLocales = sorted([ k for k in self['locales'] if k != ignore ])
+
+		# Create the dict using the locales and the slugs in each, then return
+		#	it
+		return { k : self['locales'][k]['slug'] for k in lLocales }
 
 	@classmethod
 	def unpublished(cls, custom = {}):

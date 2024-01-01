@@ -3,7 +3,7 @@
 		"auto_primary": false,
 		"create": [
 			"_slug", "_raw", "_locale", "_created", "_updated", "title",
-			"content", "meta"
+			"content", "meta", "locales"
 		],
 		"db": "blog",
 		"host": "blog",
@@ -75,6 +75,20 @@
 			"__options__": [ "description", "image", "title", "url" ]
 		},
 		"__type__": "string",
+		"__optional__": true,
+		"__sql__": {
+			"json": true
+		}
+	},
+
+	"locales": {
+		"__hash__": {
+			"__type__": "string",
+			"__regex__": "^[a-z]{2}-[A-Z]{2}$"
+		},
+		"__type__": "string",
+		"__maximum__": 128,
+		"__regex__": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
 		"__optional__": true,
 		"__sql__": {
 			"json": true

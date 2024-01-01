@@ -1257,7 +1257,7 @@ class Blog(Service):
 		# Return OK
 		return Response(True)
 
-	def admin_post_publish(self, req: dict) -> Response:
+	def admin_post_publish_update(self, req: dict) -> Response:
 		"""Post Publish update
 
 		Takes the current saved post and makes it the live version
@@ -1278,7 +1278,7 @@ class Blog(Service):
 			return Error(errors.DATA_FIELDS, [ [ '_id', 'missing' ] ])
 
 		# Fetch the raw post
-		oRaw = PostRaw(req['data']['_id'])
+		oRaw = PostRaw.get(req['data']['_id'])
 		if not oRaw:
 			return Error(
 				errors.DB_NO_RECORD, [ req['data']['_id'], 'post_raw' ]
@@ -1286,7 +1286,7 @@ class Blog(Service):
 
 		# If the last published date is the same as the update date, then
 		#	there's nothing to do here
-		if oRaw['last_published'] >= oRaw['_updated']:
+		if oRaw['last_published'] and oRaw['last_published'] >= oRaw['_updated']:
 			return Response(False)
 
 		# Init the flag to know if anything actually changed
@@ -1336,7 +1336,7 @@ class Blog(Service):
 		for sLocale, dLocale in oRaw['locales'].items():
 
 			# Make a unique id from the slug and locale
-			sSlugLocale = '%s:%s' % (dLocale['_slug'], sLocale)
+			sSlugLocale = '%s:%s' % (dLocale['slug'], sLocale)
 
 			# Do we have this already
 			if sSlugLocale in dPosts:
@@ -1356,9 +1356,6 @@ class Blog(Service):
 		# Do we have any published posts left?
 		if dPosts:
 
-			# Something changed
-			bChanges = True
-
 			# Go through each post that no longer has a counterpoint in the raw
 			#	data
 			for d in dPosts:
@@ -1369,11 +1366,11 @@ class Blog(Service):
 				PostTag.delete_get(d['_slug'], index = '_slug')
 				Post.delete_get(d['_slug'])
 
-		# If we have any posts to publish for the first time
-		if lCreate:
-
 			# Something changed
 			bChanges = True
+
+		# If we have any posts to publish for the first time
+		if lCreate:
 
 			# Init the list of categories, of tags, and of posts
 			lCategories = []
@@ -1390,7 +1387,8 @@ class Blog(Service):
 					'_locale': sLocale,
 					'title': dLocale['title'],
 					'content': dLocale['content'],
-					'meta': dLocale['meta']
+					'meta': 'meta' in dLocale and dLocale['meta'] or {},
+					'locales': oRaw.localesToSlugs(sLocale)
 				}))
 
 				# Extend the categories for each one found in the raw data
@@ -1416,6 +1414,9 @@ class Blog(Service):
 			if lTags:
 				PostTag.create_many(lTags)
 
+			# Something changed
+			bChanges = True
+
 		# If we have any to update
 		if lUpdate:
 
@@ -1431,7 +1432,11 @@ class Blog(Service):
 
 				# Go through each field and update it
 				for k in [ 'title', 'content', 'meta' ]:
-					oPost[k] = dLocale[k]
+					if k in dLocale:
+						oPost[k] = dLocale[k]
+
+				# Update the locale slugs
+				oPost['locales'] = oRaw.localesToSlugs(dPost['_locale'])
 
 				# Update the post
 				if oPost.save():
@@ -1448,11 +1453,13 @@ class Blog(Service):
 					# Delete the existing ones
 					PostCategory.delete_get(dPost['_slug'], index = '_slug')
 
-					# And add the new ones
-					PostCategory.create_many([ PostCategory({
+					# And add the new ones (if there are any)
+					lNewCats = [ PostCategory({
 						'_slug': dPost['_slug'],
 						'_category': s
-					}) for s in oRaw['categories'] ])
+					}) for s in oRaw['categories'] ]
+					if lNewCats:
+						PostCategory.create_many(lNewCats)
 
 				# If the tags have changed
 				if lTags != dLocale['tags']:
@@ -1463,19 +1470,29 @@ class Blog(Service):
 					# Delete the existing ones
 					PostTag.delete_get(dPost['_slug'], index = '_slug')
 
-					# And add the new ones
-					PostTag.create_many([ PostTag({
+					# And add the new ones (if there are any)
+					lNewTags = [ PostTag({
 						'_slug': dPost['_slug'],
 						'tag': s
-					}) for s in dLocale['tags'] ])
+					}) for s in dLocale['tags'] ]
+					if lNewTags:
+						PostTag.create_many(lNewTags)
 
 		# If anything got added, removed, or updated
 		if bChanges:
 
+			print('something changed!')
+
 			# Update the last published
 			oRaw['last_published'] = Literal('CURRENT_TIMESTAMP')
+			print(oRaw.changed('last_published'))
+			print(oRaw.changes())
+
 			if oRaw.save(changes = { 'user': req['session']['user']['_id'] }):
+				print('saved')
 				return Response(True)
+			else:
+				print('not saved')
 
 		# Return failure
 		return Response(False)
@@ -1570,27 +1587,30 @@ class Blog(Service):
 			# Readability
 			lCats = req['data']['categories']
 
-			# Check the values are unique
-			if len(set(lCats)) != len(lCats):
-				return Error(
-					errors.DATA_FIELDS, [ [ 'categories', 'not unique']]
-				)
+			# If we have any
+			if lCats:
 
-			# Get all the IDs
-			lRecords = [ d['_id'] for d in Category.get(
-				lCats, raw = [ '_id' ]
-			) ]
+				# Check the values are unique
+				if len(set(lCats)) != len(lCats):
+					return Error(
+						errors.DATA_FIELDS, [ [ 'categories', 'not unique']]
+					)
 
-			# If the counts don't match
-			if len(lRecords) != len(lCats):
-				return Error(
-					errors.DB_NO_RECORD,
-					[ [ c for c in lCats if c not in lRecords ], 'category' ]
-				)
+				# Get all the IDs
+				lRecords = [ d['_id'] for d in Category.get(
+					lCats, raw = [ '_id' ]
+				) ]
+
+				# If the counts don't match
+				if len(lRecords) != len(lCats):
+					return Error(
+						errors.DB_NO_RECORD,
+						[ [ c for c in lCats if c not in lRecords ], 'category' ]
+					)
 
 			# Set categories
 			try:
-				oPost['categories'] = req['data']['categories']
+				oPost['categories'] = lCats
 			except ValueError as e:
 				lErrors.extend(e.args[0])
 
