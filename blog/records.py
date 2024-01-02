@@ -282,6 +282,47 @@ class Post(Record_MySQL.Record):
 	"""Static Configuration"""
 
 	@classmethod
+	def by_category(cls, locale, category, custom = {}):
+		"""By Category
+
+		Fetches all the post titles and slugs associated with a category in a \
+		specific locale
+
+		Arguments:
+			locale (str): The locale to use to fetch the posts
+			category (str): The ID of the category to fetch for
+
+		Returns:
+			list
+		"""
+
+		# Get the structure
+		dStruct = cls.struct(custom)
+
+		# Generate the SQL to get the titles and slugs
+		sSQL = "SELECT `p`.`_created`," \
+			 	" `p`.`_updated`," \
+				" `p`.`_slug`," \
+				" `p`.`title`\n" \
+				"FROM `%(db)s`.`%(table)s` as `p`\n" \
+				"JOIN `%(db)s`.`%(table)s_category` as `pc` ON" \
+				" `p`.`_slug` = `pc`.`_slug`\n" \
+				"WHERE `pc`.`_category` = '%(cat)s'\n" \
+				"AND `p`.`_locale` = '%(locale)s'" % {
+			'db': dStruct['db'],
+			'table': dStruct['table'],
+			'cat': Record_MySQL.Commands.escape(dStruct['host'], category),
+			'locale': Record_MySQL.Commands.escape(dStruct['host'], locale),
+		}
+
+		# Fetch and return the results
+		return Record_MySQL.Commands.select(
+			dStruct['host'],
+			sSQL,
+			Record_MySQL.ESelect.ALL
+		)
+
+	@classmethod
 	def by_raw(cls, _id, custom = {}):
 		"""By Raw
 
@@ -396,6 +437,50 @@ class Post(Record_MySQL.Record):
 		return dResults
 
 	@classmethod
+	def by_tag(cls, locale, tag, custom = {}):
+		"""By Tag
+
+		Fetches all the post titles and slugs associated with a tag in a \
+		specific locale
+
+		Arguments:
+			locale (str): The locale to use to fetch the posts
+			tag (str): The tag to fetch for
+			custom (dict): Custom Host and DB info
+				'host' the name of the host to get/set data on
+				'append' optional postfix for dynamic DBs
+
+		Returns:
+			list
+		"""
+
+		# Get the structure
+		dStruct = cls.struct(custom)
+
+		# Generate the SQL to get the titles and slugs
+		sSQL = "SELECT `p`.`_created`," \
+			 	" `p`.`_updated`," \
+				" `p`.`_slug`," \
+				" `p`.`title`\n" \
+				"FROM `%(db)s`.`%(table)s` as `p`\n" \
+				"JOIN `%(db)s`.`%(table)s_tag` as `pc` ON" \
+				" `p`.`_slug` = `pc`.`_slug`\n" \
+				"WHERE `pc`.`tag` = '%(tag)s'\n" \
+				"AND `p`.`_locale` = '%(locale)s'" % {
+			'db': dStruct['db'],
+			'table': dStruct['table'],
+			'tag': Record_MySQL.Commands.escape(dStruct['host'], tag),
+			'locale': Record_MySQL.Commands.escape(dStruct['host'], locale),
+		}
+
+		# Fetch and return the results
+		return Record_MySQL.Commands.select(
+			dStruct['host'],
+			sSQL,
+			Record_MySQL.ESelect.ALL
+		)
+
+	@classmethod
 	def config(cls):
 		"""Config
 
@@ -407,6 +492,25 @@ class Post(Record_MySQL.Record):
 
 		# Return the config
 		return cls._conf
+
+	@classmethod
+	def get_tags(cls, tag, custom = {}):
+		"""Get Tags
+
+		Gets all the tags associated with the post
+
+		Arguments:
+			slug (str): The slug of the post
+			custom (dict): Custom Host and DB info
+				'host' the name of the host to get/set data on
+				'append' optional postfix for dynamic DBs
+
+		Returns:
+			list
+		"""
+
+		# Get the structure
+		dStruct = cls.struct(custom)
 
 class PostCategory(Record_MySQL.Record):
 	"""Post Category

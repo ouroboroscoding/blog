@@ -97,14 +97,18 @@ def run():
 		'/admin/category/locale': { 'methods': REST.CREATE | REST.DELETE | REST.UPDATE },
 
 		'/admin/post': { 'methods': REST.ALL },
-		'/admin/post/filter': { 'methods': REST.READ },
 		'/admin/post/publish': { 'methods': REST.UPDATE },
 		'/admin/post/unpublished': { 'methods': REST.READ },
+		'/admin/posts': { 'methods': REST.READ },
 
 		'/admin/media': { 'methods': REST.CREATE | REST.DELETE | REST.READ },
 		'/admin/media/filter': { 'methods': REST.READ },
 		'/admin/media/thumbnail': { 'methods': REST.CREATE | REST.DELETE },
-		'/admin/media/url': { 'methods': REST.READ }
+		'/admin/media/url': { 'methods': REST.READ },
+
+		'/category': { 'methods': REST.READ },
+		'/post': { 'methods': REST.READ },
+		'/tag': { 'methods': REST.READ }
 
 		},
 		'blog',

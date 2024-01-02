@@ -1133,32 +1133,26 @@ class Blog(Service):
 		if 'locales' not in req['data']:
 			return Error(errors.DATA_FIELDS, [ [ 'locales', 'missing' ] ])
 
-		# Init list of locales
-		lLocales = []
-
 		# Go through each locale
 		for k in req['data']['locales']:
 
-			# Add the locale to the list
-			lLocales.append(k)
-
-			# Readability
-			dLocale = req['data']['locales'][k]
-
 			# Make sure the slug doesn't already exist
-			if Post.exists(dLocale['slug']):
-				return Error(errors.DB_DUPLICATE, [ dLocale['slug'], 'slug' ])
+			if Post.exists(req['data']['locales'][k]['slug']):
+				return Error(
+					errors.DB_DUPLICATE,
+					[ req['data']['locales'][k]['slug'], 'slug' ]
+				)
 
-		# Check for the locales
-		oResponse = Services.read('mouth', 'locale/exists', { 'data': {
-			'_id': lLocales
-		}})
+			# Check for the locale
+			oResponse = Services.read('mouth', 'locale/exists', { 'data': {
+				'_id': k
+			}})
 
-		# If it doesn't exist on mouth
-		if not oResponse.data:
-			return Error(
-				errors.DB_NO_RECORD, [ lLocales, 'locale' ]
-			)
+			# If it doesn't exist on mouth
+			if not oResponse.data:
+				return Error(
+					errors.DB_NO_RECORD, [ k, 'locale' ]
+				)
 
 		# If there's any categories sent
 		if 'categories' in req['data'] and req['data']['categories']:
@@ -1661,3 +1655,168 @@ class Blog(Service):
 
 		# Return OK
 		return Response(True)
+
+	def admin_posts_read(self, req: dict) -> Response:
+		"""Posts read
+
+		Fetches and returns all published posts combined
+
+		Arguments:
+			req (dict): The request details, which can include 'data', \
+				'environment', and 'session'
+
+		Returns:
+			Services.Response
+		"""
+
+		# Make sure the user is signed in and has access
+		access.verify(req['session'], 'blog_post', access.READ)
+
+		# Init the dict of raw to locales
+		dRaw = {}
+
+		# Fetch all the published posts
+		lPosts = Post.get(
+			raw = [ '_raw', '_locale', '_created', '_updated', 'title' ],
+			orderby = [ [ '_updated', 'DESC' ] ]
+		)
+
+		# Go through each post
+		for d in lPosts:
+
+			# Add it to the raw
+			try:
+				dRaw[d['_raw']]['locales'][d['_locale']] = \
+					{ 'title': d['title'] }
+			except KeyError: dRaw[d['_raw']] = {
+				'_raw': d['_raw'],
+				'_created': d['_created'],
+				'_updated': d['_updated'],
+				'locales': {
+					d['_locale']: { 'title': d['title']}
+				}
+			}
+
+		print(dRaw)
+
+		# Return the values in the raw
+		return Response(
+			list(dRaw.values())
+		)
+
+	def category_read(self, req: dict) -> Response:
+		"""Category read
+
+		Finds the category by slug, then returns all the posts associated
+
+		Arguments:
+			req (dict): The request details, which can include 'data', \
+				'environment', and 'session'
+
+		Returns:
+			Services.Response
+		"""
+
+		# If the slug is not passed
+		if 'slug' not in req['data']:
+			return Error(errors.DATA_FIELDS, [ [ 'slug', 'missing' ] ])
+
+		# Find the category by slug
+		dCategory = CategoryLocale.filter({
+			'slug': req['data']['slug']
+		}, raw = ['_category', '_locale', 'title', 'description' ], limit = 1)
+
+		# If it doesn't exist, 404
+		if not dCategory:
+			return Error(
+				errors.DB_NO_RECORD, [ req['data']['slug'], 'category_locale' ]
+			)
+
+		# Find the other locale slugs and add them to the category
+		dCategory['locales'] = {
+			d['_locale']: d['slug'] \
+			for d in CategoryLocale.filter({
+				'_category': dCategory['_category'],
+				'_locale': { 'neq': dCategory['_locale'] }
+			}, raw = [ '_locale', 'slug' ]) }
+
+		# Get all the associated posts and add them to the category
+		dCategory['posts'] = Post.by_category(
+			dCategory['_locale'],
+			dCategory['_category']
+		)
+
+		# Return the category
+		return Response(dCategory)
+
+	def post_read(self, req: dict) -> Response:
+		"""Post read
+
+		Finds the post by slug, then returns all related info
+
+		Arguments:
+			req (dict): The request details, which can include 'data', \
+				'environment', and 'session'
+
+		Returns:
+			Services.Response
+		"""
+
+		# If the slug is not passed
+		if 'slug' not in req['data']:
+			return Error(errors.DATA_FIELDS, [ [ 'slug', 'missing' ] ])
+
+		# Fetch the post by slug
+		dPost = Post.get(
+			req['data']['slug'],
+			raw = [
+				'_locale', '_created', '_updated', 'title', 'content', 'meta',
+				'locales'
+			]
+		)
+
+		# If it doesn't exist, 404
+		if not dPost:
+			return Error(
+				errors.DB_NO_RECORD, [ req['data']['slug'], 'post' ]
+			)
+
+		# Find all the associated categories and add them to the post
+		dPost['categories'] = [ d['_category'] for d in PostCategory.filter({
+			'_slug': req['data']['slug']
+		}, raw = [ '_category' ]) ]
+
+		# Find all the associated tags and add them to the post
+		dPost['tags'] = [ d['tag'] for d in PostTag.filter({
+			'_slug': req['data']['slug']
+		}, raw = [ 'tag' ]) ]
+
+		# Return the post
+		return Response(dPost)
+
+	def tag_read(self, req: dict) -> Response:
+		"""Tag read
+
+		Finds the tag by name, then returns all related info
+
+		Arguments:
+			req (dict): The request details, which can include 'data', \
+				'environment', and 'session'
+
+		Returns:
+			Services.Response
+		"""
+
+		# Check for fields
+		try: evaluate(req['data'], [ 'locale', 'tag' ])
+		except ValueError as e:
+			return Error(errors.DATA_FIELDS, e.args)
+
+		# Get all the associated posts
+		lPosts = Post.by_tag(
+			req['data']['locale'],
+			req['data']['tag']
+		)
+
+		# Return the posts
+		return Response(lPosts)
