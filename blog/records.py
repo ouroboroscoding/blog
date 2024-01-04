@@ -12,9 +12,15 @@ __created__		= "2023-11-27"
 
 # Ouroboros imports
 from config import config
+import jsonb
+from tools import without
+import undefined
 
 # Python imports
+from operator import itemgetter
+import os
 import pathlib
+from typing import List
 
 # Pip imports
 from FormatOC import Tree
@@ -34,9 +40,11 @@ def install():
 	Category.table_create()
 	CategoryLocale.table_create()
 	Comment.table_create()
+	Media.table_create()
 	Post.table_create()
-	PostLocale.table_create()
-	PostLocaleTag.table_create()
+	PostCategory.table_create()
+	PostRaw.table_create()
+	PostTag.table_create()
 
 class Category(Record_MySQL.Record):
 	"""Category
@@ -123,6 +131,141 @@ class Comment(Record_MySQL.Record):
 		# Return the config
 		return cls._conf
 
+class Media(Record_MySQL.Record):
+	"""Media
+
+	Represents a category for blog posts to be in
+
+	Extends:
+		Record_MySQL.Record
+	"""
+
+	_conf = Record_MySQL.Record.generate_config(
+		Tree.fromFile('%s/media.json' % _defPath),
+		override={ 'db': config.mysql.db('brain') }
+	)
+	"""Static Configuration"""
+
+	@classmethod
+	def config(cls):
+		"""Config
+
+		Returns the configuration data associated with the record type
+
+		Returns:
+			dict
+		"""
+
+		# Return the config
+		return cls._conf
+
+	@classmethod
+	def _filename(self, data: dict, size: str = 'source') -> str:
+		"""Filename (static)
+
+		Generate the filename based on the size given
+
+		Arguments:
+			file (dict): Media record data
+			size (str): Optional, the size of the file, defaults to 'source' \
+				to fetch the original unaltered file
+
+		Returns:
+			str
+		"""
+
+		# Split the filename
+		lFile = os.path.splitext(data['filename'])
+
+		# Return the generated string
+		return '%s/%s%s%s' % (
+			data['_id'],
+			lFile[0],
+			(size == 'source' and '' or ('_%s' % size)),
+			lFile[1]
+		)
+
+	def filename(self, size: str = 'source') -> str:
+		"""Filename
+
+		Generate the filename based on the size given
+
+		Arguments:
+			size (str): Optional, the size of the file, defaults to 'source' \
+				to fetch the original unaltered file
+
+		Returns:
+			str
+		"""
+		return self._filename(self._dRecord, size)
+
+	@classmethod
+	def search(cls, options: dict, custom: dict = {}) -> List[dict]:
+		"""Search
+
+		Fetches media files based on options
+
+		Arguments:
+			options (dict): Options: range: list, filename: str, mine: bool
+			custom (dict): Custom Host and DB info
+				'host' the name of the host to get/set data on
+				'append' optional postfix for dynamic DBs
+
+		Returns:
+			dict[]
+		"""
+
+		# Get the structure
+		dStruct = cls.struct(custom)
+
+		# Create the WHERE clauses
+		lWhere = []
+		if 'range' in options:
+			lWhere.append('`_created` BETWEEN FROM_UNIXTIME(%d) AND ' \
+				 			'FROM_UNIXTIME(%d)' % (
+				options['range'][0], options['range'][1]
+			))
+		if 'filename' in options and options['filename']:
+			lWhere.append("`filename` LIKE '%%%s%%'" % \
+				Record_MySQL.Commands.escape(
+					dStruct['host'], options['filename']
+				)
+			)
+		if 'mine' in options and options['mine']:
+			lWhere.append("`uploader` = '%s'" % options['mine'])
+		if 'images_only' in options:
+			lWhere.append('`image` IS NOT NULL')
+
+		# If we have nothing
+		if not lWhere:
+			return []
+
+		# Generate the SQL
+		sSQL = "SELECT *\n" \
+			 	"FROM `%(db)s`.`%(table)s`\n" \
+				"WHERE %(where)s" % {
+			'db': dStruct['db'],
+			'table': dStruct['table'],
+			'where': ' AND '.join(lWhere)
+		}
+
+		# Fetch the records
+		lRecords = Record_MySQL.Commands.select(
+			dStruct['host'],
+			sSQL,
+			Record_MySQL.ESelect.ALL
+		)
+
+		# Go through each record
+		for d in lRecords:
+
+			# If we have image data
+			if 'image' in d and d['image']:
+				d['image'] = jsonb.decode(d['image'])
+
+		# Return the records
+		return lRecords
+
 class Post(Record_MySQL.Record):
 	"""Post
 
@@ -139,6 +282,205 @@ class Post(Record_MySQL.Record):
 	"""Static Configuration"""
 
 	@classmethod
+	def by_category(cls, locale, category, custom = {}):
+		"""By Category
+
+		Fetches all the post titles and slugs associated with a category in a \
+		specific locale
+
+		Arguments:
+			locale (str): The locale to use to fetch the posts
+			category (str): The ID of the category to fetch for
+
+		Returns:
+			list
+		"""
+
+		# Get the structure
+		dStruct = cls.struct(custom)
+
+		# Generate the SQL to get the titles and slugs
+		sSQL = "SELECT `p`.`_created`," \
+			 	" `p`.`_updated`," \
+				" `p`.`_slug`," \
+				" `p`.`title`\n" \
+				"FROM `%(db)s`.`%(table)s` as `p`\n" \
+				"JOIN `%(db)s`.`%(table)s_category` as `pc` ON" \
+				" `p`.`_slug` = `pc`.`_slug`\n" \
+				"WHERE `pc`.`_category` = '%(cat)s'\n" \
+				"AND `p`.`_locale` = '%(locale)s'" % {
+			'db': dStruct['db'],
+			'table': dStruct['table'],
+			'cat': Record_MySQL.Commands.escape(dStruct['host'], category),
+			'locale': Record_MySQL.Commands.escape(dStruct['host'], locale),
+		}
+
+		# Fetch and return the results
+		return Record_MySQL.Commands.select(
+			dStruct['host'],
+			sSQL,
+			Record_MySQL.ESelect.ALL
+		)
+
+	@classmethod
+	def by_raw(cls, _id, custom = {}):
+		"""By Raw
+
+		Fetches all posts, their categories, and their tags by the posts raw ID
+
+		Arguments:
+			_id (str): The ID of the PostRaw record
+			custom (dict): Custom Host and DB info
+				'host' the name of the host to get/set data on
+				'append' optional postfix for dynamic DBs
+
+		Returns:
+			dict of slugs+locale to dict of post / categories / tags
+		"""
+
+		# Init the results
+		dResults = {}
+
+		# Get the structure
+		dStruct = cls.struct(custom)
+
+		# Escape the ID
+		sID = Record_MySQL.Commands.escape(dStruct['host'], _id)
+
+		# Generate the SQL to fetch the posts
+		sSQL = "SELECT * FROM `%(db)s`.`%(table)s`\n" \
+				"WHERE `_raw` = '%(id)s'" % {
+			'db': dStruct['db'],
+			'table': dStruct['table'],
+			'id': sID
+		}
+
+		# Fetch the records
+		lRecords = Record_MySQL.Commands.select(
+			dStruct['host'],
+			sSQL,
+			Record_MySQL.ESelect.ALL
+		)
+
+		# Go through each one and store it by slug and locale
+		for d in lRecords:
+
+			# Generate the unique string
+			sSlugLocale = '%s:%s' % (d['_slug'], d['_locale'])
+
+			# Convert the json values
+			d['meta'] = jsonb.decode(d['meta'])
+			d['locales'] = jsonb.decode(d['locales'])
+
+			# Add empty category and tag lists
+			d['categories'] = []
+			d['tags'] = []
+
+			# Add it to the results
+			dResults[sSlugLocale] = d
+
+		# Generate the SQL to fetch the categories
+		sSQL = "SELECT `p`.`_slug`, `p`.`_locale`, `pc`.`_category`\n" \
+				"FROM `%(db)s`.`%(table)s` as `p`\n" \
+				"JOIN `%(db)s`.`%(table)s_category` as `pc` ON" \
+				" `p`.`_slug` = `pc`.`_slug`\n" \
+				"WHERE `p`.`_raw` = '%(id)s'" % {
+			'db': dStruct['db'],
+			'table': dStruct['table'],
+			'id': sID
+		}
+
+		# Fetch the records
+		lRecords = Record_MySQL.Commands.select(
+			dStruct['host'],
+			sSQL,
+			Record_MySQL.ESelect.ALL
+		)
+
+		# Go through each one
+		for d in lRecords:
+
+			# Generate the unique string
+			sSlugLocale = '%s:%s' % (d['_slug'], d['_locale'])
+
+			# Add the category to the post
+			dResults[sSlugLocale]['categories'].append(d['_category'])
+
+		# Generate the SQL to fetch the tags
+		sSQL = "SELECT `p`.`_slug`, `p`.`_locale`, `pt`.`tag`\n" \
+				"FROM `%(db)s`.`%(table)s` as `p`\n" \
+				"JOIN `%(db)s`.`%(table)s_tag` as `pt` ON" \
+				" `p`.`_slug` = `pt`.`_slug`\n" \
+				"WHERE `p`.`_raw` = '%(id)s'" % {
+			'db': dStruct['db'],
+			'table': dStruct['table'],
+			'id': sID
+		}
+
+		# Fetch the records
+		lRecords = Record_MySQL.Commands.select(
+			dStruct['host'],
+			sSQL,
+			Record_MySQL.ESelect.ALL
+		)
+
+		# Go through each one
+		for d in lRecords:
+
+			# Generate the unique string
+			sSlugLocale = '%s:%s' % (d['_slug'], d['_locale'])
+
+			# Add the category to the post
+			dResults[sSlugLocale]['tags'].append(d['tag'])
+
+		# Return the results
+		return dResults
+
+	@classmethod
+	def by_tag(cls, locale, tag, custom = {}):
+		"""By Tag
+
+		Fetches all the post titles and slugs associated with a tag in a \
+		specific locale
+
+		Arguments:
+			locale (str): The locale to use to fetch the posts
+			tag (str): The tag to fetch for
+			custom (dict): Custom Host and DB info
+				'host' the name of the host to get/set data on
+				'append' optional postfix for dynamic DBs
+
+		Returns:
+			list
+		"""
+
+		# Get the structure
+		dStruct = cls.struct(custom)
+
+		# Generate the SQL to get the titles and slugs
+		sSQL = "SELECT `p`.`_created`," \
+			 	" `p`.`_updated`," \
+				" `p`.`_slug`," \
+				" `p`.`title`\n" \
+				"FROM `%(db)s`.`%(table)s` as `p`\n" \
+				"JOIN `%(db)s`.`%(table)s_tag` as `pc` ON" \
+				" `p`.`_slug` = `pc`.`_slug`\n" \
+				"WHERE `pc`.`tag` = '%(tag)s'\n" \
+				"AND `p`.`_locale` = '%(locale)s'" % {
+			'db': dStruct['db'],
+			'table': dStruct['table'],
+			'tag': Record_MySQL.Commands.escape(dStruct['host'], tag),
+			'locale': Record_MySQL.Commands.escape(dStruct['host'], locale),
+		}
+
+		# Fetch and return the results
+		return Record_MySQL.Commands.select(
+			dStruct['host'],
+			sSQL,
+			Record_MySQL.ESelect.ALL
+		)
+
+	@classmethod
 	def config(cls):
 		"""Config
 
@@ -151,18 +493,36 @@ class Post(Record_MySQL.Record):
 		# Return the config
 		return cls._conf
 
-class PostLocale(Record_MySQL.Record):
-	"""Post Locale
+	@classmethod
+	def get_tags(cls, tag, custom = {}):
+		"""Get Tags
 
-	Represents the text data for a specific locale associated with a post. \
-	i.e. translation data for a single locale
+		Gets all the tags associated with the post
+
+		Arguments:
+			slug (str): The slug of the post
+			custom (dict): Custom Host and DB info
+				'host' the name of the host to get/set data on
+				'append' optional postfix for dynamic DBs
+
+		Returns:
+			list
+		"""
+
+		# Get the structure
+		dStruct = cls.struct(custom)
+
+class PostCategory(Record_MySQL.Record):
+	"""Post Category
+
+	Represents an association between a blog post and a category
 
 	Extends:
 		Record_MySQL.Record
 	"""
 
 	_conf = Record_MySQL.Record.generate_config(
-		Tree.fromFile('%s/post_locale.json' % _defPath),
+		Tree.fromFile('%s/post_category.json' % _defPath),
 		override={ 'db': config.mysql.db('brain') }
 	)
 	"""Static Configuration"""
@@ -180,17 +540,119 @@ class PostLocale(Record_MySQL.Record):
 		# Return the config
 		return cls._conf
 
-class PostLocaleTag(Record_MySQL.Record):
-	"""Post Locale Tag
+class PostRaw(Record_MySQL.Record):
+	"""Post Raw
 
-	Represents a tag and the post translation it's associated with
+	Represents the raw data with all locales, categories, and tags used to \
+	make posts
 
 	Extends:
 		Record_MySQL.Record
 	"""
 
 	_conf = Record_MySQL.Record.generate_config(
-		Tree.fromFile('%s/post_locale_tag.json' % _defPath),
+		Tree.fromFile('%s/post_raw.json' % _defPath),
+		override={ 'db': config.mysql.db('brain') }
+	)
+	"""Static Configuration"""
+
+	@classmethod
+	def config(cls):
+		"""Config
+
+		Returns the configuration data associated with the record type
+
+		Returns:
+			dict
+		"""
+
+		# Return the config
+		return cls._conf
+
+	def localesToSlugs(self, ignore):
+		"""Locales to Slugs
+
+		Returns a dict of locales to their slugs, not including the ignored \
+		locale if it's passed
+
+		Arguments:
+			ignore (str): Locale to not include in the dict
+
+		Returns:
+			dict of locales to slugs
+		"""
+
+		# Create a list of the locales, skipping the one we are ignoring, and
+		#	sort them alphabetically
+		lLocales = sorted([ k for k in self['locales'] if k != ignore ])
+
+		# Create the dict using the locales and the slugs in each, then return
+		#	it
+		return { k : self['locales'][k]['slug'] for k in lLocales }
+
+	@classmethod
+	def unpublished(cls, custom = {}):
+		"""Unpublished
+
+		Returns raw blog posts that haven't been published, or that have \
+		unpublished changes
+
+		Arguments:
+			custom (dict): Custom Host and DB info
+				'host' the name of the host to get/set data on
+				'append' optional postfix for dynamic DBs
+
+		Returns:
+			list
+		"""
+
+		# Get the structure
+		dStruct = cls.struct(custom)
+
+		# Generate the SQL
+		sSQL = "SELECT * FROM `%(db)s`.`%(table)s`\n" \
+				"WHERE `last_published` IS NULL\n" \
+				"OR `_updated` > `last_published`\n" \
+				"ORDER BY `_updated`" % {
+			'db': dStruct['db'],
+			'table': dStruct['table']
+		}
+
+		# Fetch the records
+		lRecords = Record_MySQL.Commands.select(
+			dStruct['host'],
+			sSQL,
+			Record_MySQL.ESelect.ALL
+		)
+
+		# If there's no records, return
+		if not lRecords:
+			return []
+
+		# Go through each record
+		for d in lRecords:
+
+			# If we have categories, decode them
+			if 'categories' in d:
+				d['categories'] = jsonb.decode(d['categories'])
+
+			# Decode the locales
+			d['locales'] = jsonb.decode(d['locales'])
+
+		# Return the records
+		return lRecords
+
+class PostTag(Record_MySQL.Record):
+	"""Post Tag
+
+	Represents a tag and the post it's associated with
+
+	Extends:
+		Record_MySQL.Record
+	"""
+
+	_conf = Record_MySQL.Record.generate_config(
+		Tree.fromFile('%s/post_tag.json' % _defPath),
 		override={ 'db': config.mysql.db('brain') }
 	)
 	"""Static Configuration"""

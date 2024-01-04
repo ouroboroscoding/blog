@@ -21,7 +21,7 @@ from os import environ
 from RestOC import EMail, REST, Services, Session
 
 # Module imports
-from blog.service import Blog
+from .service import Blog
 
 def run():
 	"""Run
@@ -93,16 +93,27 @@ def run():
 	# Create the HTTP server and map requests to service
 	REST.Server({
 
-		'/category': { 'methods': REST.ALL },
+		'/admin/category': { 'methods': REST.CREATE | REST.DELETE | REST.READ },
+		'/admin/category/locale': { 'methods': REST.CREATE | REST.DELETE | REST.UPDATE },
 
-		'/post': { 'methods': REST.ALL },
-		'/posts/range': { 'methods': REST.READ },
-		'/posts/category': { 'methods': REST.READ }
+		'/admin/post': { 'methods': REST.ALL },
+		'/admin/post/publish': { 'methods': REST.UPDATE },
+		'/admin/post/unpublished': { 'methods': REST.READ },
+		'/admin/posts': { 'methods': REST.READ },
+
+		'/admin/media': { 'methods': REST.CREATE | REST.DELETE | REST.READ },
+		'/admin/media/filter': { 'methods': REST.READ },
+		'/admin/media/thumbnail': { 'methods': REST.CREATE | REST.DELETE },
+		'/admin/media/url': { 'methods': REST.READ },
+
+		'/category': { 'methods': REST.READ },
+		'/post': { 'methods': REST.READ },
+		'/tag': { 'methods': REST.READ }
 
 		},
 		'blog',
 		'https?://(.*\\.)?%s' % config.rest.allowed('localhost').replace('.', '\\.'),
-		error_callback=errors.service_error
+		error_callback = errors.service_error
 	).run(
 		host=oRestConf['blog']['host'],
 		port=oRestConf['blog']['port'],

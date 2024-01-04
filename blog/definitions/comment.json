@@ -10,8 +10,7 @@
 		"host": "blog",
 		"indexes": {
 			"_post_locale": [ "_post", "_locale" ],
-			"_approved": null,
-			"category": null
+			"_approved": null
 		},
 		"primary": "_id",
 		"table": "blog_comment",

@@ -5,7 +5,7 @@ with open('README.md', 'r') as oF:
 
 setup(
 	name='blog-oc',
-	version='1.0.0',
+	version='0.1.0',
 	description='Blog contains a service to manage blog posts and comments associated',
 	long_description=long_description,
 	long_description_content_type='text/markdown',
@@ -27,11 +27,13 @@ setup(
 	python_requires='>=3.10',
 	install_requires=[
 		'body-oc>=1.0.2,<1.1',
-		'brain-oc>=1.1.6,<1.2',
-		'config-oc>=1.0.2,<1.1',
-		'Rest-OC>=1.2.4',
+		'brain-oc>=1.1.8,<1.2',
+		'config-oc>=1.0.3,<1.1',
+		'jsonb>=1.0.0,<1.1',
+		'rest-oc>=1.2.8,<1.3',
+		'tools-oc>=1.2.2,<1.3',
 		'undefined-oc>=1.0.0,<1.1',
-		'upgrade-oc>=1.0.1,<1.1'
+		'upgrade-oc>=1.0.2,<1.1'
 	],
 	entry_points={
 		'console_scripts': ['blog=blog.__main__:cli']
