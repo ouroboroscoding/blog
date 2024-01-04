@@ -32,7 +32,7 @@ def install(conf):
 	records.install()
 
 	# Store the last known upgrade version
-	set_latest(conf['data'], conf['module'], '1.0.0')
+	set_latest(conf['data'], conf['module'], '0.1.0')
 
 	# Return OK
 	return 0
