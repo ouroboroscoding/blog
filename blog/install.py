@@ -14,7 +14,7 @@ __created__		= "2023-11-27"
 from upgrade import set_latest
 
 # Module imports
-from . import records
+from blog import records
 
 def install(conf):
 	"""Install

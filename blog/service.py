@@ -32,17 +32,17 @@ from RestOC.Services import Error, internal_key, Response, Service
 from RestOC.Record_MySQL import DuplicateException, Literal
 
 # Errors
-from .errors import MINIMUM_LOCALE, NOT_AN_IMAGE, POSTS_ASSOCIATED, \
+from blog.errors import MINIMUM_LOCALE, NOT_AN_IMAGE, POSTS_ASSOCIATED, \
 	STORAGE_ISSUE
 
 # Record classes
-from .records import Category, CategoryLocale, Comment, Media, Post, \
+from blog.records import Category, CategoryLocale, Comment, Media, Post, \
 	PostCategory, PostRaw, PostTag
 
 # Figure out storage system
 _storage_type = config.blog.storage('S3')
 if _storage_type == 'S3':
-	from .media.s3 import MediaStorage
+	from blog.media.s3 import MediaStorage
 else:
 	raise ValueError('Storage type invalid', _storage_type)
 

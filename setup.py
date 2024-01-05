@@ -5,7 +5,7 @@ with open('README.md', 'r') as oF:
 
 setup(
 	name='blog-oc',
-	version='0.1.0',
+	version='0.1.1',
 	description='Blog contains a service to manage blog posts and comments associated',
 	long_description=long_description,
 	long_description_content_type='text/markdown',
@@ -22,6 +22,7 @@ setup(
 	packages=['blog'],
 	package_data={'blog': [
 		'definitions/*.json',
+		'media/*',
 		'upgrades/*'
 	]},
 	python_requires='>=3.10',
