@@ -12,4 +12,4 @@ __created__		= "2023-11-28"
 __all__ = ['errors', 'service']
 
 # Local
-from . import errors, service
+from blog import errors, service

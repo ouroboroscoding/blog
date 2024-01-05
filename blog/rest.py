@@ -21,7 +21,7 @@ from os import environ
 from RestOC import EMail, REST, Services, Session
 
 # Module imports
-from .service import Blog
+from blog.service import Blog
 
 def run():
 	"""Run
