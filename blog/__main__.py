@@ -23,7 +23,7 @@ from sys import argv, exit, stderr
 from RestOC import Record_MySQL
 
 # Module imports
-from . import install, rest
+from blog import install, rest
 
 def cli():
 	"""CLI
