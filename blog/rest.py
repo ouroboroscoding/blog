@@ -108,7 +108,9 @@ def run():
 
 		'/category': { 'methods': REST.READ },
 		'/post': { 'methods': REST.READ },
-		'/tag': { 'methods': REST.READ }
+		'/posts': { 'methods': REST.READ },
+		'/tag': { 'methods': REST.READ },
+		'/tags': { 'methods': REST.READ }
 
 		},
 		'blog',

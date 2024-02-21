@@ -28,7 +28,7 @@ from time import time
 # Pip imports
 from redis import StrictRedis
 from RestOC import Image, Services
-from RestOC.Services import Error, internal_key, Response, Service
+from RestOC.Services import Error, Response, Service
 from RestOC.Record_MySQL import DuplicateException, Literal
 
 # Errors
@@ -36,8 +36,8 @@ from blog.errors import MINIMUM_LOCALE, NOT_AN_IMAGE, POSTS_ASSOCIATED, \
 	STORAGE_ISSUE
 
 # Record classes
-from blog.records import Category, CategoryLocale, Comment, Media, Post, \
-	PostCategory, PostRaw, PostTag
+from blog.records import cache as record_cache, Category, CategoryLocale, \
+	Comment, Media, Post, PostCategory, PostRaw, PostTag
 
 # Figure out storage system
 _storage_type = config.blog.storage('S3')
@@ -79,6 +79,9 @@ class Blog(Service):
 			'port': 6379,
 			'db': 0
 		}))
+
+		# Pass the Redis connection to the records
+		record_cache(self._redis)
 
 		# Return self for chaining
 		return self
@@ -213,8 +216,8 @@ class Blog(Service):
 
 		# If there's any posts associated with this category let the user
 		#	know we can't delete it
-		lPosts = Post.filter({
-			'category': req['data']['_id']
+		lPosts = PostCategory.filter({
+			'_category': req['data']['_id']
 		}, raw = [ '_id' ])
 		if lPosts:
 			return Error(POSTS_ASSOCIATED, [ d['_id'] for d in lPosts ])
@@ -1286,8 +1289,11 @@ class Blog(Service):
 		# Init the flag to know if anything actually changed
 		bChanges = False
 
-		# Init possible errors and a dict of slugs to locales
+		# Init possible errors, a dict of slugs to locales, and a list of
+		#	locales with tags that need to be regenerated
 		lErrors = []
+		lsTagLocales = set()
+		lsPostsLocales = set()
 		dSlugs = {}
 
 		# Go through each locale
@@ -1360,6 +1366,14 @@ class Blog(Service):
 				PostTag.delete_get(d['_slug'], index = '_slug')
 				Post.delete_get(d['_slug'])
 
+				# Delete it from the cache
+				Post.cache_delete(d['_slug'])
+
+			# Add the locale to the tag list so we can reduce the count of
+			#	any tags in this post
+			lsTagLocales.add(d['_locale'])
+			lsPostsLocales.add(d['_locale'])
+
 			# Something changed
 			bChanges = True
 
@@ -1391,11 +1405,20 @@ class Blog(Service):
 					'_category': s
 				}) for s in oRaw['categories'] ])
 
-				# Extend the tags for each one found in the raw data
-				lTags.extend([ PostTag({
-					'_slug': dLocale['slug'],
-					'tag': s
-				}) for s in dLocale['tags'] ])
+				# If we have tags in this post
+				if dLocale['tags']:
+
+					# Extend the tags for each one found in the raw data
+					lTags.extend([ PostTag({
+						'_slug': dLocale['slug'],
+						'tag': s
+					}) for s in dLocale['tags'] ])
+
+					# Add the locale to the list to be regenerated
+					lsTagLocales.add(sLocale)
+
+				# Add the locale to the post list to be regenerated
+				lsPostsLocales.add(d['_locale'])
 
 			# Create the posts
 			Post.create_many(lPosts)
@@ -1407,6 +1430,10 @@ class Blog(Service):
 			# If we have tags, create them
 			if lTags:
 				PostTag.create_many(lTags)
+
+			# Add each post to the cache
+			for d in lPosts:
+				Post.cache_generate(d['_slug'])
 
 			# Something changed
 			bChanges = True
@@ -1472,21 +1499,32 @@ class Blog(Service):
 					if lNewTags:
 						PostTag.create_many(lNewTags)
 
+					# Add the locale to the list to be regenerated
+					lsTagLocales.add(dPost['_locale'])
+
+				# Update the post in the cache
+				Post.cache_generate(oPost['_slug'])
+
+				# Add the locale to the posts set
+				lsPostsLocales.add(oPost['_locale'])
+
+		# Go through each locale and regenerate the tags
+		for sLocale in lsTagLocales:
+			PostTag.locale_cache_generate(sLocale)
+
+		# Go through each locale and regenerate the posts
+		for sLocale in lsPostsLocales:
+			Post.locale_cache_generate(sLocale)
+
 		# If anything got added, removed, or updated
 		if bChanges:
 
-			print('something changed!')
-
 			# Update the last published
 			oRaw['last_published'] = Literal('CURRENT_TIMESTAMP')
-			print(oRaw.changed('last_published'))
-			print(oRaw.changes())
 
+			# Save the raw record
 			if oRaw.save(changes = { 'user': req['session']['user']['_id'] }):
-				print('saved')
 				return Response(True)
-			else:
-				print('not saved')
 
 		# Return failure
 		return Response(False)
@@ -1766,14 +1804,8 @@ class Blog(Service):
 		if 'slug' not in req['data']:
 			return Error(errors.DATA_FIELDS, [ [ 'slug', 'missing' ] ])
 
-		# Fetch the post by slug
-		dPost = Post.get(
-			req['data']['slug'],
-			raw = [
-				'_locale', '_created', '_updated', 'title', 'content', 'meta',
-				'locales'
-			]
-		)
+		# Fetch it by slug
+		dPost = Post.cache_fetch(req['data']['slug'])
 
 		# If it doesn't exist, 404
 		if not dPost:
@@ -1781,18 +1813,74 @@ class Blog(Service):
 				errors.DB_NO_RECORD, [ req['data']['slug'], 'post' ]
 			)
 
-		# Find all the associated categories and add them to the post
-		dPost['categories'] = [ d['_category'] for d in PostCategory.filter({
-			'_slug': req['data']['slug']
-		}, raw = [ '_category' ]) ]
-
-		# Find all the associated tags and add them to the post
-		dPost['tags'] = [ d['tag'] for d in PostTag.filter({
-			'_slug': req['data']['slug']
-		}, raw = [ 'tag' ]) ]
-
 		# Return the post
 		return Response(dPost)
+
+	def posts_read(self, req: dict) -> Response:
+		"""Posts read
+
+		Returns all posts on a specific page / count
+
+		Arguments:
+			req (dict): The request details, which can include 'data', \
+				'environment', and 'session'
+
+		Returns:
+			Services.Response
+		"""
+
+		# Init errors
+		lErrors = []
+
+		# If the locale is missing
+		if 'locale' not in req['data']:
+			lErrors.append([ 'locale', 'missing' ])
+
+		# If the page is missing
+		if 'page' not in req['data']:
+			iPage = 1
+
+		# Else, we got a page
+		else:
+
+			# Try to convert it
+			try:
+				iPage = int(req['data']['page'])
+			except ValueError as e:
+				lErrors.append([ 'page', 'invalid' ])
+
+			# If it's less than 1, reject it
+			if iPage < 1:
+				lErrors.append([ 'page', 'invalid' ])
+
+		# If the count is missing
+		if 'count' not in req['data']:
+			iCount = 10
+
+		# Else, we got a count
+		else:
+
+			# Try to convert it
+			try: iCount = int(req['data']['count'])
+			except ValueError as e:
+				lErrors.append([ 'count', 'invalid' ])
+
+			# If it's less than 1, reject it
+			if iPage < 1:
+				lErrors.append([ 'count', 'invalid' ])
+
+		# If there's any errors
+		if lErrors:
+			return Error(errors.DATA_FIELDS, lErrors)
+
+		# Fetch and return the posts
+		return Response(
+			Post.locale_cache_fetch(
+				req['data']['locale'],
+				iPage - 1,
+				iCount
+			)
+		)
 
 	def tag_read(self, req: dict) -> Response:
 		"""Tag read
@@ -1820,3 +1908,25 @@ class Blog(Service):
 
 		# Return the posts
 		return Response(lPosts)
+
+	def tags_read(self, req: dict) -> Response:
+		"""Tags read
+
+		Returns all the current tags by a specific locale
+
+		Arguments:
+			req (dict): The request details, which can include 'data', \
+				'environment', and 'session'
+
+		Returns:
+			Services.Response
+		"""
+
+		# If the locale is missing
+		if 'locale' not in req['data']:
+			return Error(errors.DATA_FIELDS, [ [ 'locale', 'missing' ] ])
+
+		# Fetch and return the tags by locale
+		return Response(
+			PostTag.locale_cache_fetch(req['data']['locale'])
+		)
