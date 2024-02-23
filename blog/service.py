@@ -1294,6 +1294,7 @@ class Blog(Service):
 		lErrors = []
 		lsTagLocales = set()
 		lsPostsLocales = set()
+		dLocalesTags = {}
 		dSlugs = {}
 
 		# Go through each locale
@@ -1360,19 +1361,33 @@ class Blog(Service):
 			#	data
 			for d in dPosts:
 
+				# Fetch all the tags that will be deleted
+				lTags = [ d['tag'] for d in PostTag.filter({
+					'_slug': d['_slug']
+				}, raw = [ 'tag' ]) ]
+
+				# If there's any
+				if lTags:
+
+					# Delete them
+					PostTag.delete_get(d['_slug'], index = '_slug')
+
+					# Add them to the corresponding locale
+					try: dLocalesTags[d['_locale']].update(lTags)
+					except KeyError: dLocalesTags[d['_locale']] = set(lTags)
+
+				# Add the locale to the tag and posts lists so we regenerate
+				#	them
+				lsTagLocales.add(d['_locale'])
+				lsPostsLocales.add(d['_locale'])
+
 				# Delete all categories, tags, and the post itself based on the
 				#	slug
 				PostCategory.delete_get(d['_slug'], index = '_slug')
-				PostTag.delete_get(d['_slug'], index = '_slug')
 				Post.delete_get(d['_slug'])
 
 				# Delete it from the cache
 				Post.cache_delete(d['_slug'])
-
-			# Add the locale to the tag list so we can reduce the count of
-			#	any tags in this post
-			lsTagLocales.add(d['_locale'])
-			lsPostsLocales.add(d['_locale'])
 
 			# Something changed
 			bChanges = True
@@ -1413,6 +1428,12 @@ class Blog(Service):
 						'_slug': dLocale['slug'],
 						'tag': s
 					}) for s in dLocale['tags'] ])
+
+					# Add them to the locale for regenerating
+					try:
+						dLocalesTags[sLocale].update(dLocale['tags'])
+					except KeyError:
+						dLocalesTags[sLocale] = set(dLocale['tags'])
 
 					# Add the locale to the list to be regenerated
 					lsTagLocales.add(sLocale)
@@ -1485,11 +1506,20 @@ class Blog(Service):
 				# If the tags have changed
 				if lTags != dLocale['tags']:
 
+					print('lTags: %s' % lTags)
+					print('dLocale[\'tags\']: %s' % dLocale['tags'])
+
 					# Something changed
 					bChanges = True
 
 					# Delete the existing ones
 					PostTag.delete_get(dPost['_slug'], index = '_slug')
+
+					# Add the deleted tags to the locale for regenerating
+					try:
+						dLocalesTags[oPost['_locale']].update(lTags)
+					except KeyError:
+						dLocalesTags[oPost['_locale']] = set(lTags)
 
 					# And add the new ones (if there are any)
 					lNewTags = [ PostTag({
@@ -1497,7 +1527,18 @@ class Blog(Service):
 						'tag': s
 					}) for s in dLocale['tags'] ]
 					if lNewTags:
+
+						# Insert the new tags
 						PostTag.create_many(lNewTags)
+
+						# Add the new tags to the locale for regenerating
+						try:
+							dLocalesTags[oPost['_locale']].update(
+								dLocale['tags']
+							)
+						except KeyError:
+							dLocalesTags[oPost['_locale']] = \
+								set(dLocale['tags'])
 
 					# Add the locale to the list to be regenerated
 					lsTagLocales.add(dPost['_locale'])
@@ -1510,11 +1551,16 @@ class Blog(Service):
 
 		# Go through each locale and regenerate the tags
 		for sLocale in lsTagLocales:
-			PostTag.locale_cache_generate(sLocale)
+			PostTag.all_locale_cache_generate(sLocale)
 
 		# Go through each locale and regenerate the posts
 		for sLocale in lsPostsLocales:
 			Post.locale_cache_generate(sLocale)
+
+		# Go through each locale and tag and regenerate the corresponding slugs
+		for sLocale in dLocalesTags:
+			for sTag in dLocalesTags[sLocale]:
+				PostTag.locale_cache_generate(sTag, sLocale)
 
 		# If anything got added, removed, or updated
 		if bChanges:
@@ -1895,19 +1941,60 @@ class Blog(Service):
 			Services.Response
 		"""
 
-		# Check for fields
+		# Init errors
+		lErrors = []
+
+		# If the locale or tag is missing is missing
 		try: evaluate(req['data'], [ 'locale', 'tag' ])
 		except ValueError as e:
-			return Error(errors.DATA_FIELDS, e.args)
+			lErrors.extend([ [ s, 'missing' ] for s in e.args ])
 
-		# Get all the associated posts
-		lPosts = Post.by_tag(
-			req['data']['locale'],
-			req['data']['tag']
+		# If the page is missing
+		if 'page' not in req['data']:
+			iPage = 1
+
+		# Else, we got a page
+		else:
+
+			# Try to convert it
+			try:
+				iPage = int(req['data']['page'])
+			except ValueError as e:
+				lErrors.append([ 'page', 'invalid' ])
+
+			# If it's less than 1, reject it
+			if iPage < 1:
+				lErrors.append([ 'page', 'invalid' ])
+
+		# If the count is missing
+		if 'count' not in req['data']:
+			iCount = 10
+
+		# Else, we got a count
+		else:
+
+			# Try to convert it
+			try: iCount = int(req['data']['count'])
+			except ValueError as e:
+				lErrors.append([ 'count', 'invalid' ])
+
+			# If it's less than 1, reject it
+			if iPage < 1:
+				lErrors.append([ 'count', 'invalid' ])
+
+		# If there's any errors
+		if lErrors:
+			return Error(errors.DATA_FIELDS, lErrors)
+
+		# Fetch and return the posts
+		return Response(
+			PostTag.locale_cache_fetch(
+				req['data']['tag'],
+				req['data']['locale'],
+				iPage - 1,
+				iCount
+			)
 		)
-
-		# Return the posts
-		return Response(lPosts)
 
 	def tags_read(self, req: dict) -> Response:
 		"""Tags read
@@ -1928,5 +2015,5 @@ class Blog(Service):
 
 		# Fetch and return the tags by locale
 		return Response(
-			PostTag.locale_cache_fetch(req['data']['locale'])
+			PostTag.all_locale_cache_fetch(req['data']['locale'])
 		)

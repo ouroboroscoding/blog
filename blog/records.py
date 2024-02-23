@@ -523,14 +523,14 @@ class Post(Record_MySQL.Record):
 		_moRedis.get(cls._post_key % slug)
 
 	@classmethod
-	def cache_fetch(cls, slug: str, custom = {}) -> dict:
+	def cache_fetch(cls, slug: str | List[str], custom = {}) -> dict:
 		"""Cache Fetch
 
 		Fetches the post from the cache, if it doesn't exist, it's generated \
 		first
 
 		Arguments:
-			slug (str): The slug of the post to fetch
+			slug (str | str[]): The slug(s) of the post(s) to fetch
 			custom (dict): Custom Host and DB info
 				'host' the name of the host to get/set data on
 				'append' optional postfix for dynamic DBs
@@ -539,21 +539,51 @@ class Post(Record_MySQL.Record):
 			dict
 		"""
 
-		# Fetch it from the cache
-		sPost = _moRedis.delete(cls._post_key % slug)
+		# If we got a single slug
+		if isinstance(slug, str):
 
-		# If it doesn't exist, or it's -1
-		if not sPost:
+			# Fetch it from the cache
+			sPost = _moRedis.get(cls._post_key % slug)
 
-			# Generate and return it
-			return cls.cache_generate(slug, custom)
+			# If it doesn't exist
+			if not sPost:
 
-		# If we got -1, return None
-		if sPost == '-1':
-			return None
+				# Generate and return it
+				return cls.cache_generate(slug, custom)
 
-		# Decode and return the post
-		return jsonb.decode(sPost)
+			# If we got -1, return None
+			if sPost == '-1':
+				return None
+
+			# Decode and return the post
+			return jsonb.decode(sPost)
+
+		# Fetch all the posts by slug
+		lPosts = _moRedis.mget([ cls._post_key % s for s in slug ])
+
+		# Go through each one
+		for i in range(len(lPosts)):
+
+			# If it's missing
+			if not lPosts[i]:
+
+				# Try to find it by the slug
+				lPosts[i] = cls.cache_generate(slug[i])
+
+			# Else, if it's -1
+			elif lPosts[i] == '-1':
+
+				# Set it to None
+				lPosts[i] = None
+
+			# Else
+			else:
+
+				# Decode it
+				lPosts[i] = jsonb.decode(lPosts[i])
+
+		# Return the posts
+		return lPosts
 
 	@classmethod
 	def cache_generate(cls, slug: str, custom = {}) -> dict:
@@ -576,8 +606,8 @@ class Post(Record_MySQL.Record):
 		dPost = Post.get(
 			slug,
 			raw = [
-				'_locale', '_created', '_updated', 'title', 'content', 'meta',
-				'locales'
+				'_slug', '_locale', '_created', '_updated', 'title', 'content',
+				'meta', 'locales'
 			]
 		)
 
@@ -658,6 +688,8 @@ class Post(Record_MySQL.Record):
 
 		Arguments:
 			locale (str): The locale to fetch the tags for
+			page (uint): The page (starting with zero) to fetch of slugs
+			count (uint): The count of slugs to return
 			custom (dict): Custom Host and DB info
 				'host' the name of the host to get/set data on
 				'append' optional postfix for dynamic DBs
@@ -667,51 +699,33 @@ class Post(Record_MySQL.Record):
 		"""
 
 		# Fetch the post IDs
-		lSlugs = _moRedis.get(cls._posts_key % locale)
+		sSlugs = _moRedis.get(cls._posts_key % locale)
 
 		# If it doesn't exist
-		if not lSlugs:
+		if not sSlugs:
 
 			# Generate the list
-			lSlugs = cls.locale_cache_generate(locale, custom)
+			sSlugs = cls.locale_cache_generate(locale, custom)
 
 		# Else, we got tags back
 		else:
 
 			# Decode them
-			lSlugs = jsonb.decode(lSlugs)
+			lSlugs = jsonb.decode(sSlugs)
+
+		# Init the result with the total count
+		dReturn = { 'count': len(lSlugs) }
 
 		# Pull out the IDs specifically for the given page/count
 		iStart = page * count
 		iEnd = iStart + count
 		lSlugs = lSlugs[iStart:iEnd]
 
-		# Fetch all the posts by slug
-		lPosts = _moRedis.mget([ cls._post_key % s for s in lSlugs ])
+		# Get the individual posts and add them to the return
+		dReturn['posts'] = cls.cache_fetch(lSlugs)
 
-		# Go through each one
-		for i in range(len(lPosts)):
-
-			# If it's missing
-			if not lPosts[i]:
-
-				# Try to find it by the slug
-				lPosts[i] = cls.cache_generate(lSlugs[i])
-
-			# Else, if it's -1
-			elif lPosts[i] == '-1':
-
-				# Set it to None
-				lPosts[i] = None
-
-			# Else
-			else:
-
-				# Decode it
-				lPosts[i] = jsonb.decode(lPosts[i])
-
-		# Return the posts
-		return lPosts
+		# Return the posts and total count
+		return dReturn
 
 	@classmethod
 	def locale_cache_generate(cls, locale: str, custom: dict = {}):
@@ -739,13 +753,11 @@ class Post(Record_MySQL.Record):
 		sSQL = "SELECT `_slug`\n" \
 				"FROM `%(db)s`.`%(table)s`\n" \
 				"WHERE `_locale` = '%(locale)s'\n" \
-				"ORDER BY `_updated` DESC" % {
+				"ORDER BY `_created` DESC" % {
 			'db': dStruct['db'],
 			'table': dStruct['table'],
 			'locale': Record_MySQL.Commands.escape(dStruct['host'], locale)
 		}
-
-		print(sSQL)
 
 		# Fetch the slugs
 		lSlugs = Record_MySQL.Commands.select(
@@ -753,8 +765,6 @@ class Post(Record_MySQL.Record):
 			sSQL,
 			Record_MySQL.ESelect.COLUMN
 		)
-
-		print(lSlugs)
 
 		# Store the slugs in the cache
 		_moRedis.set(
@@ -910,15 +920,18 @@ class PostTag(Record_MySQL.Record):
 	)
 	"""Static Configuration"""
 
+	_tag_key = 'blog:tag:%s:%s'
+	"""Key used to store / fetch the cache of slugs by tag / locale"""
+
 	_tags_key = 'blog:tags:%s'
 	"""Key used to store / fetch the cache of all tags by locale"""
 
 	@classmethod
-	def locale_cache_fetch(cls,
+	def all_locale_cache_fetch(cls,
 		locale: str,
 		custom: dict = {}
 	) -> List[dict]:
-		"""Locale Cache Fetch
+		"""Tags Locale Cache Fetch
 
 		Fetches all tags in a specific locale. If the cache doesn't exist, it \
 		is generated and stored first, then returned
@@ -946,11 +959,11 @@ class PostTag(Record_MySQL.Record):
 		return jsonb.decode(lTags)
 
 	@classmethod
-	def locale_cache_generate(cls,
+	def all_locale_cache_generate(cls,
 		locale: str,
 		custom: dict = {}
 	) -> List[dict]:
-		"""Locale Cache Generate
+		"""Tags Locale Cache Generate
 
 		Takes a locale and generates the list of tags available in that locale \
 		based on the posts in that locale, then stores it in the cache for \
@@ -1014,3 +1027,129 @@ class PostTag(Record_MySQL.Record):
 
 		# Return the config
 		return cls._conf
+
+	@classmethod
+	def locale_cache_fetch(cls,
+		tag: str,
+		locale: str,
+		page: int = 0,
+		count: int = 10,
+		custom = {}
+	) -> List[str]:
+		"""Locale Cache Fetch
+
+		Fetches the slugs of posts associated with the tag and locale
+
+		Arguments:
+			tag (str): The tag to generate the list of slugs for
+			locale (str): The locale to fetch posts from
+			page (uint): The page (starting with zero) to fetch of slugs
+			count (uint): The count of slugs to return
+			custom (dict): Custom Host and DB info
+				'host' the name of the host to get/set data on
+				'append' optional postfix for dynamic DBs
+
+		Returns:
+			str[]
+		"""
+
+		# Fetch the slugs from the cache
+		sSlugs = _moRedis.get(cls._tag_key % (tag, locale))
+
+		# If it doesn't exist
+		if not sSlugs:
+
+			# Generate and return it
+			return cls.locale_cache_generate(tag, locale, custom)
+
+		# If we got -1, return None
+		if sSlugs == '-1':
+			return []
+
+		# Decode them
+		lSlugs = jsonb.decode(sSlugs)
+
+		# Init the result with the total count
+		dReturn = { 'count': len(lSlugs) }
+
+		# Pull out the IDs specifically for the given page/count
+		iStart = page * count
+		iEnd = iStart + count
+		lSlugs = lSlugs[iStart:iEnd]
+
+		# Get the individual posts and add them to the return
+		dReturn['posts'] = Post.cache_fetch(lSlugs)
+
+		# Return the posts and total count
+		return dReturn
+
+	@classmethod
+	def locale_cache_generate(cls,
+		tag: str,
+		locale: str,
+		custom = {}
+	) -> List[str]:
+		"""Locale Cache Generate
+
+		Takes a tag and locale and generates the list of slugs available in \
+		that locale based on the posts in that locale, then stores it in the \
+		cache for future use
+
+		Arguments:
+			tag (str): The tag to generate the list of slugs for
+			locale (str): The locale to fetch posts from
+			custom (dict): Custom Host and DB info
+				'host' the name of the host to get/set data on
+				'append' optional postfix for dynamic DBs
+
+		Returns:
+			str[]
+		"""
+
+		# Get the structures
+		dStruct = cls.struct(custom)
+		dPost = Post.struct(custom)
+
+		# Generate the SQL to fetch all the slugs that fit the tag and the
+		#	locale
+		sSQL = "SELECT `p`.`_slug`\n" \
+				"FROM `%(db)s`.`%(table)s` as `t`\n" \
+				"JOIN `%(db_p)s`.`%(table_p)s` as `p`\n" \
+				"	ON `t`.`_slug` = `p`.`_slug`\n" \
+				"WHERE `t`.`tag` = '%(tag)s'\n" \
+				"AND `p`.`_locale` = '%(locale)s'\n" \
+				"ORDER BY `p`.`_created` DESC" % {
+			'db': dStruct['db'],
+			'table': dStruct['table'],
+			'db_p': dPost['db'],
+			'table_p': dPost['table'],
+			'tag': Record_MySQL.Commands.escape(dStruct['host'], tag),
+			'locale': Record_MySQL.Commands.escape(dStruct['host'], locale)
+		}
+
+		# Fetch the column of slugs
+		lSlugs = Record_MySQL.Commands.select(
+			dStruct['host'],
+			sSQL,
+			Record_MySQL.ESelect.COLUMN
+		)
+
+		# If there's nothing under that tag
+		if not lSlugs:
+
+			# Mark it as not existing for an hour so that no one can overload
+			#	the DB
+			_moRedis.set(
+				cls._tag_key % (tag, locale),
+				'-1',
+				ex = 3600
+			)
+
+			# Then immediately return as there's nothing else to do
+			return []
+
+		# Permanently store them in the cache
+		_moRedis.set(cls._tag_key % (tag, locale), jsonb.encode(lSlugs))
+
+		# Return the slugs in case anyone needs them
+		return lSlugs
