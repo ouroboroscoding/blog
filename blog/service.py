@@ -13,13 +13,12 @@ __created__		= "2023-11-30"
 # Ouroboros imports
 from body import constants, errors
 from brain import access, users
-from brain.users import details
 from config import config
+from nredis import nr
 from tools import clone, evaluate, without
 
 # Python imports
 from base64 import b64decode, b64encode
-from copy import copy
 import mimetypes
 import os
 import re
@@ -74,11 +73,7 @@ class Blog(Service):
 		})
 
 		# Create a connection to Redis
-		self._redis = StrictRedis(**config.redis[self._conf['redis_host']]({
-			'host': 'localhost',
-			'port': 6379,
-			'db': 0
-		}))
+		self._redis = nr(self._conf['redis_host'])
 
 		# Pass the Redis connection to the records
 		record_cache(self._redis)

@@ -1,0 +1,7 @@
+{
+	"page_suffix": " - page %d",
+	"root_title": "Derniers articles",
+	"root_description": "Derniers articles de blog",
+	"tag_title": "Postes pour l'étiquette '%s'",
+	"tag_description": "Voir les messages récents associés a l'étiquette '%s'"
+}

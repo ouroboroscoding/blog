@@ -13,11 +13,8 @@ __created__		= "2023-11-27"
 # Ouroboros imports
 from config import config
 import jsonb
-from tools import without
-import undefined
 
 # Python imports
-from operator import itemgetter
 import os
 import pathlib
 from typing import List
@@ -463,50 +460,6 @@ class Post(Record_MySQL.Record):
 		return dResults
 
 	@classmethod
-	def by_tag(cls, locale, tag, custom = {}):
-		"""By Tag
-
-		Fetches all the post titles and slugs associated with a tag in a \
-		specific locale
-
-		Arguments:
-			locale (str): The locale to use to fetch the posts
-			tag (str): The tag to fetch for
-			custom (dict): Custom Host and DB info
-				'host' the name of the host to get/set data on
-				'append' optional postfix for dynamic DBs
-
-		Returns:
-			list
-		"""
-
-		# Get the structure
-		dStruct = cls.struct(custom)
-
-		# Generate the SQL to get the titles and slugs
-		sSQL = "SELECT `p`.`_created`," \
-			 	" `p`.`_updated`," \
-				" `p`.`_slug`," \
-				" `p`.`title`\n" \
-				"FROM `%(db)s`.`%(table)s` as `p`\n" \
-				"JOIN `%(db)s`.`%(table)s_tag` as `pc` ON" \
-				" `p`.`_slug` = `pc`.`_slug`\n" \
-				"WHERE `pc`.`tag` = '%(tag)s'\n" \
-				"AND `p`.`_locale` = '%(locale)s'" % {
-			'db': dStruct['db'],
-			'table': dStruct['table'],
-			'tag': Record_MySQL.Commands.escape(dStruct['host'], tag),
-			'locale': Record_MySQL.Commands.escape(dStruct['host'], locale),
-		}
-
-		# Fetch and return the results
-		return Record_MySQL.Commands.select(
-			dStruct['host'],
-			sSQL,
-			Record_MySQL.ESelect.ALL
-		)
-
-	@classmethod
 	def cache_delete(cls, slug: str) -> bool:
 		"""Cache Delete
 
@@ -552,7 +505,7 @@ class Post(Record_MySQL.Record):
 				return cls.cache_generate(slug, custom)
 
 			# If we got -1, return None
-			if sPost == '-1':
+			if sPost == '-1' or sPost == b'-1':
 				return None
 
 			# Decode and return the post
@@ -571,7 +524,7 @@ class Post(Record_MySQL.Record):
 				lPosts[i] = cls.cache_generate(slug[i])
 
 			# Else, if it's -1
-			elif lPosts[i] == '-1':
+			elif lPosts[i] == '-1' or lPosts[i] == b'-1':
 
 				# Set it to None
 				lPosts[i] = None
@@ -655,25 +608,6 @@ class Post(Record_MySQL.Record):
 		return cls._conf
 
 	@classmethod
-	def get_tags(cls, tag, custom = {}):
-		"""Get Tags
-
-		Gets all the tags associated with the post
-
-		Arguments:
-			slug (str): The slug of the post
-			custom (dict): Custom Host and DB info
-				'host' the name of the host to get/set data on
-				'append' optional postfix for dynamic DBs
-
-		Returns:
-			list
-		"""
-
-		# Get the structure
-		dStruct = cls.struct(custom)
-
-	@classmethod
 	def locale_cache_fetch(cls,
 		locale: str,
 		page: int = 0,
@@ -705,7 +639,7 @@ class Post(Record_MySQL.Record):
 		if not sSlugs:
 
 			# Generate the list
-			sSlugs = cls.locale_cache_generate(locale, custom)
+			lSlugs = cls.locale_cache_generate(locale, custom)
 
 		# Else, we got tags back
 		else:
@@ -1060,14 +994,17 @@ class PostTag(Record_MySQL.Record):
 		if not sSlugs:
 
 			# Generate and return it
-			return cls.locale_cache_generate(tag, locale, custom)
+			lSlugs = cls.locale_cache_generate(tag, locale, custom)
+			if lSlugs is None:
+				return None
 
 		# If we got -1, return None
-		if sSlugs == '-1':
-			return []
+		elif sSlugs == '-1' or sSlugs == b'-1':
+			return None
 
-		# Decode them
-		lSlugs = jsonb.decode(sSlugs)
+		# Else, decode them
+		else:
+			lSlugs = jsonb.decode(sSlugs)
 
 		# Init the result with the total count
 		dReturn = { 'count': len(lSlugs) }
@@ -1146,7 +1083,7 @@ class PostTag(Record_MySQL.Record):
 			)
 
 			# Then immediately return as there's nothing else to do
-			return []
+			return None
 
 		# Permanently store them in the cache
 		_moRedis.set(cls._tag_key % (tag, locale), jsonb.encode(lSlugs))
