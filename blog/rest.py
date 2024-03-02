@@ -42,16 +42,8 @@ def run():
 		}
 	}))
 
-	# Get redis session config
-	dRedis = config.redis.session({
-		'host': 'localhost',
-		'port': 6379,
-		'db': 0,
-		'charset': 'utf8'
-	})
-
 	# Init the Session module
-	Session.init(dRedis)
+	Session.init('session')
 
 	# Get the REST config
 	dRest = config.rest({
@@ -108,7 +100,9 @@ def run():
 
 		'/category': { 'methods': REST.READ },
 		'/post': { 'methods': REST.READ },
-		'/tag': { 'methods': REST.READ }
+		'/posts': { 'methods': REST.READ },
+		'/tag': { 'methods': REST.READ },
+		'/tags': { 'methods': REST.READ }
 
 		},
 		'blog',
