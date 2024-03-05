@@ -15,6 +15,7 @@ from body import constants, errors
 from brain import access, users
 from config import config
 from nredis import nr
+from strings import strip_html
 from tools import clone, evaluate, without
 
 # Python imports
@@ -22,7 +23,9 @@ from base64 import b64decode, b64encode
 import mimetypes
 import os
 import re
+from strings import cut
 from time import time
+from typing import List
 
 # Pip imports
 from redis import StrictRedis
@@ -45,6 +48,9 @@ if _storage_type == 'S3':
 else:
 	raise ValueError('Storage type invalid', _storage_type)
 
+# Constants
+POST_SHORTEN_LENGTH = 500
+
 class Blog(Service):
 	"""Blog Service class
 
@@ -56,6 +62,64 @@ class Blog(Service):
 
 	_image_extensions = ['jpeg', 'jpe', 'jpg', 'png']
 	"""Valid image extensions"""
+
+	def _shorten(self, posts: List[dict], conf):
+		"""Shorten (Protected)
+
+		Adds a shortened, non-html version of the content for each post. \
+		Modifies the list in place, doesn't return
+
+		Arguments:
+			posts (list): The list of dicts containing the posts
+			conf (uint | dict): The config for shortening
+
+		Returns:
+			None
+		"""
+
+		# If it's true, use the default character length and symbol
+		if conf is True:
+			conf = {
+				'length': POST_SHORTEN_LENGTH,
+				'ellipsis': '…'
+			}
+
+		# If it's an int, just add the default symbol
+		elif isinstance(conf, int):
+			if conf < 0:
+				return Error(
+					errors.DATA_FIELDS,
+					[ [ 'shorten', 'must be unsigned' ] ]
+				)
+			conf = {
+				'length': conf,
+				'ellipsis': '…'
+			}
+
+		# If it's a dict
+		elif isinstance(conf, dict):
+			try: evaluate(conf, [ 'length', 'ellipsis' ])
+			except ValueError as e:
+				return Error(
+					errors.DATA_FIELDS,
+					[ [ 'shorten.%s' % s, 'missing' ] for s in e.args ]
+				)
+			if not isinstance(conf['length'], int) or \
+				conf['length'] < 0:
+				return Error(
+					errors.DATA_FIELDS,
+					[ [ 'shorten.length', 'must be unsigned int' ] ]
+				)
+
+		# Go through each post
+		for d in posts:
+
+			# Strip the HTML from the content and return the expected length
+			d['shortened'] = cut(
+				strip_html(d['content']),
+				conf['length'],
+				conf['ellipsis']
+			)
 
 	def initialise(self):
 		"""Initialise
@@ -1914,14 +1978,19 @@ class Blog(Service):
 		if lErrors:
 			return Error(errors.DATA_FIELDS, lErrors)
 
-		# Fetch and return the posts
-		return Response(
-			Post.locale_cache_fetch(
-				req['data']['locale'],
-				iPage - 1,
-				iCount
-			)
+		# Get the posts from the cache
+		dPosts = Post.locale_cache_fetch(
+			req['data']['locale'],
+			iPage - 1,
+			iCount
 		)
+
+		# If shortened data is requested
+		if 'shorten' in req['data'] and req['data']['shorten']:
+			self._shorten(dPosts['posts'], req['data']['shorten'])
+
+		# Return the posts and total count
+		return Response(dPosts)
 
 	def tag_read(self, req: dict) -> Response:
 		"""Tag read
@@ -1981,15 +2050,20 @@ class Blog(Service):
 		if lErrors:
 			return Error(errors.DATA_FIELDS, lErrors)
 
-		# Fetch and return the posts
-		return Response(
-			PostTag.locale_cache_fetch(
-				req['data']['tag'],
-				req['data']['locale'],
-				iPage - 1,
-				iCount
-			)
+		# Fetch the associated posts from the cache
+		dPosts = PostTag.locale_cache_fetch(
+			req['data']['tag'],
+			req['data']['locale'],
+			iPage - 1,
+			iCount
 		)
+
+		# If shortened data is requested
+		if 'shorten' in req['data'] and req['data']['shorten']:
+			self._shorten(dPosts['posts'], req['data']['shorten'])
+
+		# Return the posts and total count
+		return Response(dPosts)
 
 	def tags_read(self, req: dict) -> Response:
 		"""Tags read
