@@ -1287,8 +1287,15 @@ class Blog(Service):
 				errors.DB_NO_RECORD, [ req['data']['_id'], 'post_raw' ]
 			)
 
-		# Get the slugs for each locale
-		lSlugs = [d['slug'] for d in oPostRaw['locales'].values()]
+		# Go through each post by locale and save the slugs and locales
+		lLocales = []
+		lSlugs = []
+		for sLocale, dPost in oPostRaw['locales'].items():
+			lSlugs.append(dPost['slug'])
+			lLocales.append(sLocale)
+
+		# Fetch all the tags for the slugs
+		dTags = PostTag.by_slugs(lSlugs)
 
 		# Delete all categories associated
 		PostCategory.delete_get(lSlugs, index = '_slug')
@@ -1298,6 +1305,19 @@ class Blog(Service):
 
 		# Delete all posts associated
 		Post.delete_get(lSlugs)
+
+		# Refresh the individual tags
+		for sLocale, lTags in dTags.items():
+			for sTag in lTags:
+				PostTag.locale_cache_generate(sTag, sLocale)
+
+		# Refresh the all post and all tag locales
+		for sLocale in lLocales:
+			Post.locale_cache_generate(sLocale)
+			PostTag.all_locale_cache_generate(sLocale)
+
+		# Delete the slugs from the cache
+		Post.cache_delete(lSlugs)
 
 		# Delete the post
 		bRes = oPostRaw.delete(
@@ -1498,7 +1518,7 @@ class Blog(Service):
 					lsTagLocales.add(sLocale)
 
 				# Add the locale to the post list to be regenerated
-				lsPostsLocales.add(d['_locale'])
+				lsPostsLocales.add(sLocale)
 
 			# Create the posts
 			Post.create_many(lPosts)
