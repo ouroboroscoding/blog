@@ -17,7 +17,7 @@ import jsonb
 # Python imports
 import os
 import pathlib
-from typing import List
+from typing import Dict, List
 
 # Pip imports
 from FormatOC import Tree
@@ -460,20 +460,29 @@ class Post(Record_MySQL.Record):
 		return dResults
 
 	@classmethod
-	def cache_delete(cls, slug: str) -> bool:
+	def cache_delete(cls, slug: str | List[str]) -> bool:
 		"""Cache Delete
 
 		Deletes a post from the cache
 
 		Arguments:
-			slug (str): The slug of the post
+			slug (str | str[]): The slug of the post
 
 		Returns:
 			None
 		"""
 
-		# Delete it
-		_moRedis.get(cls._post_key % slug)
+		# If we only got one
+		if isinstance(slug, str):
+
+			# Delete it
+			_moRedis.delete(cls._post_key % slug)
+
+		# Else, if we got a list
+		elif isinstance(slug, list):
+
+			# Delete them all
+			_moRedis.delete(*[ cls._post_key % s for s in slug ])
 
 	@classmethod
 	def cache_fetch(cls, slug: str | List[str], custom = {}) -> dict:
@@ -948,6 +957,56 @@ class PostTag(Record_MySQL.Record):
 
 		# Return the tags in case someone needs them
 		return lTags
+
+	@classmethod
+	def by_slugs(cls, slugs: List[str], custom = {}) -> Dict[str, List[str]]:
+		"""By Post
+
+		Fetches the tags and locales associated with a single post
+
+		Arguments:
+			slugs (str[]): The slugs to fetch tags for
+			custom (dict): Custom Host and DB info
+				'host' the name of the host to get/set data on
+				'append' optional postfix for dynamic DBs
+
+		Returns:
+			dict
+		"""
+
+		# Get the structs
+		dStruct = cls.struct(custom)
+		dPost = Post.struct(custom)
+
+		# Generate SQL to fetch all tags and their locales associated with the
+		#	given post
+		sSQL = "SELECT `t`.`tag`, `p`.`_locale`\n" \
+				"FROM `%(db)s`.`%(table)s` as `t`\n" \
+				"JOIN `%(db_p)s`.`%(table_p)s` as `p`\n" \
+				"	ON `t`.`_slug` = `p`.`_slug`\n" \
+				"WHERE `p`.`_slug` %(slugs)s\n" % {
+			'db': dStruct['db'],
+			'table': dStruct['table'],
+			'db_p': dPost['db'],
+			'table_p': dPost['table'],
+			'slugs': cls.process_value(dStruct, '_slug', slugs)
+		}
+
+		# Get the records
+		lRows = Record_MySQL.Commands.select(
+			dStruct['host'],
+			sSQL,
+			Record_MySQL.ESelect.ALL
+		)
+
+		# Go through each one and store the tags by locale
+		dTags = {}
+		for d in lRows:
+			try: dTags[d['_locale']].append(d['tag'])
+			except: dTags[d['_locale']] = [ d['tag'] ]
+
+		# Return the tags by locale
+		return dTags
 
 	@classmethod
 	def config(cls):
