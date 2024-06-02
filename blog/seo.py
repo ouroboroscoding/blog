@@ -1,7 +1,7 @@
 # coding=utf8
-""" Blog REST
+""" Blog SEO
 
-Handles starting the REST server using the Blog service
+Handles fetching OpenGraph / SEO related data associated with blog posts
 """
 
 __author__		= "Chris Nasr"
@@ -46,9 +46,9 @@ class BlogSeo(object):
 
 	def __init__(self,
 		url_root: str = '/blog/',
-		uri_post: str = 'p/',
-		uri_category: str = 'c/',
-		uri_tag: str = 't/',
+		url_post: str = 'p/',
+		url_category: str = 'c/',
+		url_tag: str = 't/',
 		page_count: int | Dict[str, int] = 10,
 		title_prefix: str = undefined,
 		title_suffix: str = undefined,
@@ -58,10 +58,10 @@ class BlogSeo(object):
 		Creates the instance and initialises member variables
 
 		Arguments:
-			locale (str): The locale to use
 			url_root (str): The root of all URLS
-			uri_post (str): The post URI prefix
-			uri_tag (str): The tag URI prefix
+			url_post (str): The post folder prefix
+			url_category (str): The category folder prefix
+			url_tag (str): The tag folder prefix
 			page_count (int | dict): The number of posts per page for all \
 				types, or a dict of { category, post, tag } with an int for \
 				each
@@ -74,13 +74,13 @@ class BlogSeo(object):
 
 		# Store the root, post, and tag prefixes
 		self._url = {
-			'cat_prefix': uri_category,
-			'cat_length': len(uri_category),
-			'post_prefix': uri_post,
-			'post_length': len(uri_post),
+			'cat_prefix': url_category,
+			'cat_length': len(url_category),
+			'post_prefix': url_post,
+			'post_length': len(url_post),
 			'root_length': len(url_root),
-			'tag_prefix': uri_tag,
-			'tag_length': len(uri_tag)
+			'tag_prefix': url_tag,
+			'tag_length': len(url_tag)
 		}
 
 		# Store the page count options

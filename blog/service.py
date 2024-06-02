@@ -1373,6 +1373,7 @@ class Blog(Service):
 		lErrors = []
 		lsTagLocales = set()
 		lsPostsLocales = set()
+		dLocalesCategories = {}
 		dLocalesTags = {}
 		dSlugs = {}
 
@@ -1440,6 +1441,23 @@ class Blog(Service):
 			#	data
 			for d in dPosts:
 
+				# Fetch all the categories that will be deleted
+				lCategories = [ d['_category'] for d in PostCategory.filter({
+					'_slug': d['_slug']
+				}, raw = [ '_category' ]) ]
+
+				# If there's any
+				if lCategories:
+
+					# Delete them
+					PostCategory.delete_get(d['_slug'], index = '_slug')
+
+					# Add them to the corresponding locale
+					try:
+						dLocalesCategories[d['_locale']].update(lCategories)
+					except KeyError:
+						dLocalesCategories[d['_locale']] = set(lCategories)
+
 				# Fetch all the tags that will be deleted
 				lTags = [ d['tag'] for d in PostTag.filter({
 					'_slug': d['_slug']
@@ -1452,17 +1470,17 @@ class Blog(Service):
 					PostTag.delete_get(d['_slug'], index = '_slug')
 
 					# Add them to the corresponding locale
-					try: dLocalesTags[d['_locale']].update(lTags)
-					except KeyError: dLocalesTags[d['_locale']] = set(lTags)
+					try:
+						dLocalesTags[d['_locale']].update(lTags)
+					except KeyError:
+						dLocalesTags[d['_locale']] = set(lTags)
 
 				# Add the locale to the tag and posts lists so we regenerate
 				#	them
 				lsTagLocales.add(d['_locale'])
 				lsPostsLocales.add(d['_locale'])
 
-				# Delete all categories, tags, and the post itself based on the
-				#	slug
-				PostCategory.delete_get(d['_slug'], index = '_slug')
+				# Delete the post itself
 				Post.delete_get(d['_slug'])
 
 				# Delete it from the cache
@@ -1493,11 +1511,20 @@ class Blog(Service):
 					'locales': oRaw.localesToSlugs(sLocale)
 				}))
 
-				# Extend the categories for each one found in the raw data
-				lCategories.extend([ PostCategory({
-					'_slug': dLocale['slug'],
-					'_category': s
-				}) for s in oRaw['categories'] ])
+				# If we have categories
+				if oRaw['categories']:
+
+					# Extend the set for each one found in the raw data
+					lCategories.extend([ PostCategory({
+						'_slug': dLocale['slug'],
+						'_category': s
+					}) for s in oRaw['categories'] ])
+
+					# Add them to the locale for regenerating
+					try:
+						dLocalesTags[sLocale].update(oRaw['categories'])
+					except KeyError:
+						dLocalesTags[sLocale] = set(oRaw['categories'])
 
 				# If we have tags in this post
 				if dLocale['tags']:
@@ -1545,7 +1572,8 @@ class Blog(Service):
 			for dPost, dLocale in lUpdate:
 
 				# Remove the categories and tags
-				lCategories = dPost.pop('categories').sort()
+				lCategories = dPost.pop('categories')
+				lCategories.sort()
 				lTags = dPost.pop('tags')
 
 				# Create the Post instance
@@ -1574,19 +1602,33 @@ class Blog(Service):
 					# Delete the existing ones
 					PostCategory.delete_get(dPost['_slug'], index = '_slug')
 
+					# Add the deleted tags to the locale for regenerating
+					try:
+						dLocalesCategories[oPost['_locale']].update(lCategories)
+					except KeyError:
+						dLocalesCategories[oPost['_locale']] = set(lCategories)
+
 					# And add the new ones (if there are any)
 					lNewCats = [ PostCategory({
 						'_slug': dPost['_slug'],
 						'_category': s
 					}) for s in oRaw['categories'] ]
 					if lNewCats:
+
+						# Insert the new categories
 						PostCategory.create_many(lNewCats)
+
+						# Add the new categories to the locale for regenerating
+						try:
+							dLocalesCategories[oPost['_locale']].update(
+								oRaw['categories']
+							)
+						except KeyError:
+							dLocalesCategories[oPost['_locale']] = \
+								set(oRaw['categories'])
 
 				# If the tags have changed
 				if lTags != dLocale['tags']:
-
-					print('lTags: %s' % lTags)
-					print('dLocale[\'tags\']: %s' % dLocale['tags'])
 
 					# Something changed
 					bChanges = True
@@ -1635,6 +1677,24 @@ class Blog(Service):
 		# Go through each locale and regenerate the posts
 		for sLocale in lsPostsLocales:
 			Post.locale_cache_generate(sLocale)
+
+		# Go through each locale and category and regenerate the corresponding
+		#	slugs
+		for sLocale in dLocalesCategories:
+
+			# Fetch the slugs for the given categories
+			dCatSlugs = {
+				d['_category']: d['slug'] for d in CategoryLocale.filter({
+					'_category': list(dLocalesCategories[sLocale]),
+					'_locale': sLocale
+				}, raw = [ '_category', 'slug' ])
+			}
+
+			# Regenerate the corresponding slugs
+			for sCategoryID in dLocalesCategories[sLocale]:
+				PostCategory.cache_generate(
+					dCatSlugs[sCategoryID]
+				)
 
 		# Go through each locale and tag and regenerate the corresponding slugs
 		for sLocale in dLocalesTags:
@@ -1860,8 +1920,6 @@ class Blog(Service):
 				}
 			}
 
-		print(dRaw)
-
 		# Return the values in the raw
 		return Response(
 			list(dRaw.values())
@@ -1880,37 +1938,64 @@ class Blog(Service):
 			Services.Response
 		"""
 
-		# If the slug is not passed
-		if 'slug' not in req['data']:
-			return Error(errors.DATA_FIELDS, [ [ 'slug', 'missing' ] ])
+		# Init errors
+		lErrors = []
 
-		# Find the category by slug
-		dCategory = CategoryLocale.filter({
-			'slug': req['data']['slug']
-		}, raw = ['_category', '_locale', 'title', 'description' ], limit = 1)
+		# If the locale or tag is missing is missing
+		try: evaluate(req['data'], [ 'locale', 'slug' ])
+		except ValueError as e:
+			lErrors.extend([ [ s, 'missing' ] for s in e.args ])
 
-		# If it doesn't exist, 404
-		if not dCategory:
-			return Error(
-				errors.DB_NO_RECORD, [ req['data']['slug'], 'category_locale' ]
-			)
+		# If the page is missing
+		if 'page' not in req['data']:
+			iPage = 1
 
-		# Find the other locale slugs and add them to the category
-		dCategory['locales'] = {
-			d['_locale']: d['slug'] \
-			for d in CategoryLocale.filter({
-				'_category': dCategory['_category'],
-				'_locale': { 'neq': dCategory['_locale'] }
-			}, raw = [ '_locale', 'slug' ]) }
+		# Else, we got a page
+		else:
 
-		# Get all the associated posts and add them to the category
-		dCategory['posts'] = Post.by_category(
-			dCategory['_locale'],
-			dCategory['_category']
+			# Try to convert it
+			try:
+				iPage = int(req['data']['page'])
+			except ValueError as e:
+				lErrors.append([ 'page', 'invalid' ])
+
+			# If it's less than 1, reject it
+			if iPage < 1:
+				lErrors.append([ 'page', 'invalid' ])
+
+		# If the count is missing
+		if 'count' not in req['data']:
+			iCount = 10
+
+		# Else, we got a count
+		else:
+
+			# Try to convert it
+			try: iCount = int(req['data']['count'])
+			except ValueError as e:
+				lErrors.append([ 'count', 'invalid' ])
+
+			# If it's less than 1, reject it
+			if iPage < 1:
+				lErrors.append([ 'count', 'invalid' ])
+
+		# If there's any errors
+		if lErrors:
+			return Error(errors.DATA_FIELDS, lErrors)
+
+		# Fetch the associated posts from the cache
+		dPosts = PostCategory.cache_fetch(
+			req['data']['slug'],
+			iPage - 1,
+			iCount
 		)
 
-		# Return the category
-		return Response(dCategory)
+		# If shortened data is requested
+		if 'shorten' in req['data'] and req['data']['shorten']:
+			self._shorten(dPosts['posts'], req['data']['shorten'])
+
+		# Return the posts and total count
+		return Response(dPosts)
 
 	def post_read(self, req: dict) -> Response:
 		"""Post read
