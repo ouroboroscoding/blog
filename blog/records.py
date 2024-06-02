@@ -12,16 +12,14 @@ __created__		= "2023-11-27"
 
 # Ouroboros imports
 from config import config
+from FormatOC import Tree
 import jsonb
+from RestOC import Record_MySQL
 
 # Python imports
 import os
 import pathlib
 from typing import Dict, List
-
-# Pip imports
-from FormatOC import Tree
-from RestOC import Record_MySQL
 
 # Module variable
 _moRedis = None
@@ -413,12 +411,18 @@ class Post(Record_MySQL.Record):
 			'id': sID
 		}
 
+		print('-' * 40)
+		print(sSQL)
+
 		# Fetch the records
 		lRecords = Record_MySQL.Commands.select(
 			dStruct['host'],
 			sSQL,
 			Record_MySQL.ESelect.ALL
 		)
+
+		print('-' * 40)
+		print(lRecords)
 
 		# Go through each one
 		for d in lRecords:
@@ -588,9 +592,25 @@ class Post(Record_MySQL.Record):
 			return None
 
 		# Find all the associated categories and add them to the post
-		dPost['categories'] = [ d['_category'] for d in PostCategory.filter({
-			'_slug': slug
-		}, raw = [ '_category' ]) ]
+		lCategoryIDs = [
+			d['_category'] for d in PostCategory.filter({
+				'_slug': slug
+			}, raw = [ '_category' ])
+		]
+
+		# If we have no categories
+		if not lCategoryIDs:
+			dPost['categories'] = []
+
+		# Else,
+		else:
+
+			# Find the category slugs and titles for the categories associated
+			#	in the same locale as the post
+			dPost['categories'] = CategoryLocale.filter({
+				'_category': lCategoryIDs,
+				'_locale': dPost['_locale']
+			}, raw = [ '_category', 'slug', 'title' ], orderby = [ 'title' ])
 
 		# Find all the associated tags and add them to the post
 		dPost['tags'] = [ d['tag'] for d in PostTag.filter({
@@ -733,6 +753,9 @@ class PostCategory(Record_MySQL.Record):
 	)
 	"""Static Configuration"""
 
+	_category_key = 'blog:cat:%s'
+	"""Key used to store / fetch the cache of slugs by category / locale"""
+
 	@classmethod
 	def config(cls):
 		"""Config
@@ -745,6 +768,137 @@ class PostCategory(Record_MySQL.Record):
 
 		# Return the config
 		return cls._conf
+
+	@classmethod
+	def cache_fetch(cls,
+		slug: str,
+		page: int = 0,
+		count: int = 10,
+		custom = {}
+	) -> List[str]:
+		"""Cache Fetch
+
+		Fetches the slugs of posts associated with the category
+
+		Arguments:
+			slug (str): The category to fetch the list of post slugs for
+			page (uint): The page (starting with zero) to fetch of slugs
+			count (uint): The count of slugs to return
+			custom (dict): Custom Host and DB info
+				'host' the name of the host to get/set data on
+				'append' optional postfix for dynamic DBs
+
+		Returns:
+			str[]
+		"""
+
+		# Fetch the slugs from the cache
+		sSlugs = _moRedis.get(cls._category_key % slug)
+
+		# If it doesn't exist
+		if not sSlugs:
+
+			# Generate and return it
+			lSlugs = cls.cache_generate(slug, custom)
+			if lSlugs is None:
+				return None
+
+		# If we got -1, return None
+		elif sSlugs == '-1' or sSlugs == b'-1':
+			return None
+
+		# Else, decode them
+		else:
+			lSlugs = jsonb.decode(sSlugs)
+
+		# Init the result with the total count
+		dReturn = { 'count': len(lSlugs) }
+
+		# Pull out the IDs specifically for the given page/count
+		iStart = page * count
+		iEnd = iStart + count
+		lSlugs = lSlugs[iStart:iEnd]
+
+		# Get the individual posts and add them to the return
+		dReturn['posts'] = Post.cache_fetch(lSlugs)
+
+		# Return the posts and total count
+		return dReturn
+
+	@classmethod
+	def cache_generate(cls,
+		slug: str,
+		custom = {}
+	) -> List[str]:
+		"""Cache Generate
+
+		Takes a category and generates the list of slugs available in that \
+		category and locale, then stores it in the cache for future use
+
+		Arguments:
+			slug (str): The category slug to generate the list of post slugs for
+			custom (dict): Custom Host and DB info
+				'host' the name of the host to get/set data on
+				'append' optional postfix for dynamic DBs
+
+		Returns:
+			str[]
+		"""
+
+		# Get the structures
+		dStruct = cls.struct(custom)
+		dCategory = CategoryLocale.struct(custom)
+		dPost = Post.struct(custom)
+
+		# Generate the SQL to fetch all the slugs that fit the category and the
+		#	locale
+		sSQL = "SELECT `p`.`_slug`\n" \
+				"FROM `%(db)s`.`%(table)s` as `c`\n" \
+				"JOIN `%(db_cl)s`.`%(table_cl)s` as `cl`\n" \
+				"	ON `c`.`_category` = `cl`.`_category`\n" \
+				"JOIN `%(db_p)s`.`%(table_p)s` as `p`\n" \
+				"	ON `c`.`_slug` = `p`.`_slug`\n" \
+				"WHERE `cl`.`slug` = '%(slug)s'\n" \
+				"AND `cl`.`_locale` = `p`.`_locale`\n" \
+				"ORDER BY `p`.`_created` DESC" % {
+			'db': dStruct['db'],
+			'table': dStruct['table'],
+			'db_cl': dCategory['db'],
+			'table_cl': dCategory['table'],
+			'db_p': dPost['db'],
+			'table_p': dPost['table'],
+			'slug': Record_MySQL.Commands.escape(dStruct['host'], slug)
+		}
+
+		# Fetch the column of slugs
+		lSlugs = Record_MySQL.Commands.select(
+			dStruct['host'],
+			sSQL,
+			Record_MySQL.ESelect.COLUMN
+		)
+
+		# If there's nothing under that category
+		if not lSlugs:
+
+			# Mark it as not existing for an hour so that no one can overload
+			#	the DB
+			_moRedis.set(
+				cls._category_key % slug,
+				'-1',
+				ex = 3600
+			)
+
+			# Then immediately return as there's nothing else to do
+			return None
+
+		# Permanently store them in the cache
+		_moRedis.set(
+			cls._category_key % slug,
+			jsonb.encode(lSlugs)
+		)
+
+		# Return the slugs in case anyone needs them
+		return lSlugs
 
 class PostRaw(Record_MySQL.Record):
 	"""Post Raw

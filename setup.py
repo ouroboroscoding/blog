@@ -5,7 +5,7 @@ with open('README.md', 'r') as oF:
 
 setup(
 	name='blog-oc',
-	version='0.1.4',
+	version='0.2.0',
 	description='Blog contains a service to manage blog posts and comments associated',
 	long_description=long_description,
 	long_description_content_type='text/markdown',
