@@ -9,7 +9,8 @@ __copyright__	= "Ouroboros Coding Inc."
 __email__		= "chris@ouroboroscoding.com"
 __created__		= "2023-11-28"
 
-__all__ = ['errors', 'service']
+__all__ = ['errors', 'service', 'sitemap_pages']
 
 # Local
 from blog import errors, service
+from blog.sitemap import pages as sitemap_pages

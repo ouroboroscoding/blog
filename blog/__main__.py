@@ -52,13 +52,16 @@ def cli():
 	Record_MySQL.db_prepend(config.mysql.prepend(''))
 
 	# Add the primary mysql DB
-	Record_MySQL.add_host('blog', config.mysql.hosts[dConfig['mysql_host']]({
-		'host': 'localhost',
-		'port': 3306,
-		'charset': 'utf8',
-		'user': 'root',
-		'passwd': ''
-	}))
+	Record_MySQL.add_host(
+		'blog',
+		config.mysql.hosts[dConfig['mysql_host']]({
+			'host': 'localhost',
+			'port': 3306,
+			'charset': 'utf8',
+			'user': 'root',
+			'passwd': ''
+		})
+	)
 
 	# Set the timestamp timezone
 	Record_MySQL.timestamp_timezone(
