@@ -793,37 +793,37 @@ class PostCategory(Record_MySQL.Record):
 		"""
 
 		# Fetch the slugs from the cache
-		sSlugs = _moRedis.get(cls._category_key % slug)
+		sCategory = _moRedis.get(cls._category_key % slug)
 
 		# If it doesn't exist
-		if not sSlugs:
+		if not sCategory:
 
 			# Generate and return it
-			lSlugs = cls.cache_generate(slug, custom)
-			if lSlugs is None:
+			dCategory = cls.cache_generate(slug, custom)
+			if dCategory is None:
 				return None
 
 		# If we got -1, return None
-		elif sSlugs == '-1' or sSlugs == b'-1':
+		elif sCategory == '-1' or sCategory == b'-1':
 			return None
 
 		# Else, decode them
 		else:
-			lSlugs = jsonb.decode(sSlugs)
+			dCategory = jsonb.decode(sCategory)
 
-		# Init the result with the total count
-		dReturn = { 'count': len(lSlugs) }
+		# Add the total count
+		dCategory['count'] = len(dCategory['posts'])
 
 		# Pull out the IDs specifically for the given page/count
 		iStart = page * count
 		iEnd = iStart + count
-		lSlugs = lSlugs[iStart:iEnd]
+		dCategory['posts'] = dCategory['posts'][iStart:iEnd]
 
 		# Get the individual posts and add them to the return
-		dReturn['posts'] = Post.cache_fetch(lSlugs)
+		dCategory['posts'] = Post.cache_fetch(dCategory['posts'])
 
 		# Return the posts and total count
-		return dReturn
+		return dCategory
 
 	@classmethod
 	def cache_generate(cls,
@@ -842,7 +842,7 @@ class PostCategory(Record_MySQL.Record):
 				'append' optional postfix for dynamic DBs
 
 		Returns:
-			str[]
+			dict
 		"""
 
 		# Get the structures
@@ -891,14 +891,22 @@ class PostCategory(Record_MySQL.Record):
 			# Then immediately return as there's nothing else to do
 			return None
 
-		# Permanently store them in the cache
+		# Fetch the category info
+		dCategory = CategoryLocale.filter({
+			'slug': slug
+		}, raw = ['_category', '_locale', 'title', 'description' ], limit = 1)
+
+		# Add the post slugs to it
+		dCategory['posts'] = lSlugs
+
+		# Permanently store the data in the cache
 		_moRedis.set(
 			cls._category_key % slug,
-			jsonb.encode(lSlugs)
+			jsonb.encode(dCategory)
 		)
 
-		# Return the slugs in case anyone needs them
-		return lSlugs
+		# Return the category in case anyone needs it
+		return dCategory
 
 class PostRaw(Record_MySQL.Record):
 	"""Post Raw
