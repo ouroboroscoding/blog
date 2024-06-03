@@ -5,7 +5,7 @@ with open('README.md', 'r') as oF:
 
 setup(
 	name='blog-oc',
-	version='0.2.0',
+	version='0.2.1',
 	description='Blog contains a service to manage blog posts and comments associated',
 	long_description=long_description,
 	long_description_content_type='text/markdown',
@@ -34,7 +34,7 @@ setup(
 		'jsonb>=1.0.0,<1.1',
 		'namedredis>=1.0.1,<1.1',
 		'rest-oc>=1.3.0,<1.4',
-		'strings-oc>=1.0.6,<1.1',
+		'strings-oc>=1.0.7,<1.1',
 		'tools-oc>=1.2.4,<1.3',
 		'undefined-oc>=1.0.0,<1.1',
 		'upgrade-oc>=1.0.2,<1.1'
