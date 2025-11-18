@@ -14,7 +14,7 @@ __created__		= "2024-05-27"
 # Ouroboros imports
 import config
 import undefined
-from RestOC import Record_MySQL
+from rest_mysql import Record_MySQL
 
 # Python imports
 from typing import List, Tuple
@@ -24,7 +24,9 @@ from urllib.parse import quote_plus
 import arrow
 
 # Project records
-from blog.records import CategoryLocale, Post, PostTag
+from blog.records.category_locale import CategoryLocale
+from blog.records.post import Post
+from blog.records.post_tag import PostTag
 
 # Constants
 DEFAULT_FREQUENCY = 'always'
@@ -110,26 +112,6 @@ def pages(
 	# If there's no default
 	if 'default' not in dFrequencies:
 		dFrequencies['default'] = DEFAULT_FREQUENCY
-
-	# Add the global prepend
-	Record_MySQL.db_prepend(config.mysql.prepend(''))
-
-	# Add the primary mysql DB
-	Record_MySQL.add_host(
-		'blog',
-		config.mysql.hosts[config.blog.mysql_host('blog')]({
-			'host': 'localhost',
-			'port': 3306,
-			'charset': 'utf8',
-			'user': 'root',
-			'passwd': ''
-		})
-	)
-
-	# Set the timestamp timezone
-	Record_MySQL.timestamp_timezone(
-		config.mysql.timestamp_timezone('+00:00')
-	)
 
 	# Init the return list
 	lPages = []

@@ -24,11 +24,9 @@ import mimetypes
 import os
 import re
 from strings import cut
-from time import time
 from typing import List
 
 # Pip imports
-from redis import StrictRedis
 from RestOC import Image, Services
 from RestOC.Services import Error, Response, Service
 from RestOC.Record_MySQL import DuplicateException, Literal
@@ -38,8 +36,14 @@ from blog.errors import MINIMUM_LOCALE, NOT_AN_IMAGE, POSTS_ASSOCIATED, \
 	STORAGE_ISSUE
 
 # Record classes
-from blog.records import cache as record_cache, Category, CategoryLocale, \
-	Comment, Media, Post, PostCategory, PostRaw, PostTag
+from blog import records
+from blog.records.category import Category
+from blog.records.category_locale import CategoryLocale
+from blog.records.media import Media
+from blog.records.post import Post
+from blog.records.post_category import PostCategory
+from blog.records.post_raw import PostRaw
+from blog.records.post_tag import PostTag
 
 # Figure out storage system
 _storage_type = config.blog.storage('S3')
@@ -121,30 +125,6 @@ class Blog(Service):
 				conf['ellipsis']
 			)
 
-	def initialise(self):
-		"""Initialise
-
-		Initialises the instance and returns itself for chaining
-
-		Returns:
-			Blog
-		"""
-
-		# Get config
-		self._conf = config.blog({
-			'user_default_locale': 'en-US',
-			'redis_host': 'blog'
-		})
-
-		# Create a connection to Redis
-		self._redis = nr(self._conf['redis_host'])
-
-		# Pass the Redis connection to the records
-		record_cache(self._redis)
-
-		# Return self for chaining
-		return self
-
 	def admin_category_create(self, req: dict) -> Response:
 		"""Category create
 
@@ -159,17 +139,15 @@ class Blog(Service):
 		"""
 
 		# Make sure the user is signed in and has access
-		access.verify(req['session'], 'blog_category', access.CREATE)
+		access.verify(
+			req.session, { 'name': 'blog_category', 'right': access.CREATE }
+		)
 
 		# Check minimum fields
-		try: evaluate(req['data'], [{'record': ['locales']}])
-		except ValueError as e:
-			return Error(
-				errors.DATA_FIELDS, [ [ s, 'missing' ] for s in e.args ]
-			)
+		self.check_data(req.data, { 'record': [ 'locales' ] })
 
 		# Get the record
-		dRecord = req['data']['record']
+		dRecord = req.data.record
 
 		# If locales exists but is empty
 		if not dRecord['locales']:
@@ -184,8 +162,8 @@ class Blog(Service):
 			)
 
 		# Go through each passed locale
-		lLocales = []
-		for k,d in dRecord['locales'].items():
+		lLocales = [ ]
+		for k, d in dRecord['locales'].items():
 
 			# Add the empty UUID so we don't fail on the `_category` check
 			d['_category'] = constants.EMPTY_UUID
@@ -210,11 +188,11 @@ class Blog(Service):
 				)
 
 		# Create the instance
-		oCategory = Category({})
+		oCategory = Category({ })
 
 		# Create the record
 		if not oCategory.create(changes = {
-			'user': req['session']['user']['_id']
+			'user': req.session.user._id
 		}):
 			return Error(errors.DB_CREATE_FAILED, 'category')
 
@@ -226,18 +204,18 @@ class Blog(Service):
 
 			# Create the record
 			try:
-				o.create(changes = { 'user': req['session']['user']['_id'] })
+				o.create(changes = { 'user': req.session.user._id })
 			except DuplicateException as e:
 
 				# Delete the existing category and any locales that were
 				#	created
 				oCategory.delete(
-					changes = { 'user': req['session']['user']['_id'] }
+					changes = { 'user': req.session.user._id }
 				)
 				for o2 in lLocales:
 					if o2['_id']:
 						o2.delete(
-							changes = { 'user': req['session']['user']['_id'] }
+							changes = { 'user': req.session.user._id }
 						)
 
 				# Return the duplicate error
@@ -260,36 +238,37 @@ class Blog(Service):
 		"""
 
 		# Make sure the user is signed in and has access
-		access.verify(req['session'], 'blog_category', access.DELETE)
+		access.verify(
+			req.session, { 'name': 'blog_category', 'right': access.DELETE }
+		)
 
 		# If we didn't get an ID
-		if '_id' not in req['data']:
-			return Error(errors.DATA_FIELDS, [ [ '_id', 'missing' ] ])
+		self.check_data(req.data, [ '_id' ])
 
 		# Fetch the category
-		oCategory = Category.get(req['data']['_id'])
+		oCategory = Category.get(req.data._id)
 		if not oCategory:
 			return Error(
-				errors.DB_NO_RECORD, [ req['data']['_id'], 'category' ]
+				errors.DB_NO_RECORD, [ req.data._id, 'category' ]
 			)
 
 		# If there's any posts associated with this category let the user
 		#	know we can't delete it
 		lPosts = PostCategory.filter({
-			'_category': req['data']['_id']
-		}, raw = [ '_id' ])
+			'_category': req.data._id
+		}, raw = '_id')
 		if lPosts:
-			return Error(POSTS_ASSOCIATED, [ d['_id'] for d in lPosts ])
+			return Error(POSTS_ASSOCIATED, lPosts)
 
 		# Get the associated locales
 		lLocales = CategoryLocale.filter({
-			'_category': req['data']['_id']
+			'_category': req.data._id
 		})
 
 		# Delete each one
 		for o in lLocales:
 			if not o.delete(
-				changes = { 'user': req['session']['user']['_id'] }
+				changes = { 'user': req.session.user._id }
 			):
 
 				# If it failed for any reason
@@ -299,11 +278,11 @@ class Blog(Service):
 
 		# Delete the record
 		if not oCategory.delete(
-			changes = { 'user': req['session']['user']['_id'] }
+			changes = { 'user': req.session.user._id }
 		):
 			# If it failed for any reason
 			return Error(
-				errors.DB_DELETE_FAILED, [ req['data']['_id'], 'category' ]
+				errors.DB_DELETE_FAILED, [ req.data._id, 'category' ]
 			)
 
 		# Return OK
@@ -323,38 +302,33 @@ class Blog(Service):
 		"""
 
 		# Make sure the user is signed in and has access
-		access.verify(req['session'], 'blog_category', access.UPDATE)
+		access.verify(
+			req.session, { 'name': 'blog_category', 'right': access.UPDATE }
+		)
 
 		# Check minimum fields
-		try: evaluate(req['data'], ['_id', 'locale', 'record' ])
-		except ValueError as e:
-			return Error(
-				errors.DATA_FIELDS, [ [ s, 'missing' ] for s in e.args ]
-			)
+		self.check_data(req.data, [ '_id', 'locale', 'record' ])
 
 		# If the category doesn't exist
-		if not Category.exists(req['data']['_id']):
+		if not Category.exists(req.data._id):
 			return Error(
-				errors.DB_NO_RECORD, [ req['data']['_id'], 'category ']
+				errors.DB_NO_RECORD, [ req.data._id, 'category ']
 			)
 
 		# Store the record
-		dRecord = req['data']['record']
+		dRecord = req.data.record
 
 		# Create the instance
 		try:
-			dRecord['_category'] = req['data']['_id']
-			dRecord['_locale'] = req['data']['locale']
+			dRecord['_category'] = req.data._id
+			dRecord['_locale'] = req.data.locale
 			oLocale = CategoryLocale(dRecord)
 		except ValueError as e:
-			return Error(
-				errors.DATA_FIELDS,
-				[ [ 'record.%s' % l[0], l[1] ] for l in e.args[0] ]
-			)
+			return Error(errors.DATA_FIELDS, e.args[0])
 
 		# Create the record
 		try:
-			oLocale.create(changes = { 'user': req['session']['user']['_id'] })
+			oLocale.create(changes = { 'user': req.session.user._id })
 		except DuplicateException as e:
 			if e.args[1] == 'slug':
 				return Error(
@@ -384,24 +358,22 @@ class Blog(Service):
 		"""
 
 		# Make sure the user is signed in and has access
-		access.verify(req['session'], 'blog_category', access.UPDATE)
+		access.verify(
+			req.session, { 'name': 'blog_category', 'right': access.UPDATE }
+		)
 
 		# Check minimum fields
-		try: evaluate(req['data'], ['_id', 'locale' ])
-		except ValueError as e:
-			return Error(
-				errors.DATA_FIELDS, [ [ s, 'missing' ] for s in e.args ]
-			)
+		self.check_data(req.data, [ '_id', 'locale' ])
 
 		# If the category doesn't exist
-		if not Category.exists(req['data']['_id']):
+		if not Category.exists(req.data._id):
 			return Error(
-				errors.DB_NO_RECORD, [ req['data']['_id'], 'category ']
+				errors.DB_NO_RECORD, [ req.data._id, 'category ']
 			)
 
 		# Get the count of existing category locales
 		iCount = CategoryLocale.count(filter = {
-			'_category': req['data']['_id']
+			'_category': req.data._id
 		})
 
 		# If there's less than 2
@@ -410,15 +382,15 @@ class Blog(Service):
 
 		# Else, find the record
 		oLocale = CategoryLocale.filter({
-			'_category': req['data']['_id'],
-			'_locale': req['data']['locale']
+			'_category': req.data._id,
+			'_locale': req.data.locale
 		}, limit = 1)
 		if not oLocale:
 			return Error(errors.DB_NO_RECORD)
 
 		# Delete the record
 		if not oLocale.delete(
-			changes = { 'user': req['session']['user']['_id'] }
+			changes = { 'user': req.session.user._id }
 		):
 			return Error(errors.DB_DELETE_FAILED)
 
@@ -439,52 +411,49 @@ class Blog(Service):
 		"""
 
 		# Make sure the user is signed in and has access
-		access.verify(req['session'], 'blog_category', access.UPDATE)
+		access.verify(
+			req.session, { 'name': 'blog_category', 'right': access.UPDATE }
+		)
 
 		# Check minimum fields
-		try: evaluate(req['data'], ['_id', 'locale', 'record' ])
-		except ValueError as e:
-			return Error(
-				errors.DATA_FIELDS, [ [ s, 'missing' ] for s in e.args ]
-			)
+		self.check_data(req.data, [ '_id', 'locale', 'record' ])
 
 		# If the category doesn't exist
-		if not Category.exists(req['data']['_id']):
+		if not Category.exists(req.data._id):
 			return Error(
-				errors.DB_NO_RECORD, [ req['data']['_id'], 'category ']
+				errors.DB_NO_RECORD, [ req.data._id, 'category ']
 			)
 
 		# Store the record
-		dRecord = req['data']['record']
+		dRecord = req.data.record
 
 		# Find the record
 		oLocale = CategoryLocale.filter({
-			'_category': req['data']['_id'],
-			'_locale': req['data']['locale']
+			'_category': req.data._id,
+			'_locale': req.data.locale
 		}, limit = 1)
 		if not oLocale:
 			return Error(errors.DB_NO_RECORD)
 
+		# Strip out fields that can't be changed
+		without(req.data.record, [
+			'_id', '_created', '_category', '_locale'
+		], True)
+
+		# If there's nothing left
+		if not req.data.record:
+			return Error(
+				errors.DB_UPDATE_FAILED, [ req.data._id, 'category_locale' ]
+			)
+
 		# Go through fields that can be changed
-		lErrors = []
-		for f,v in without(
-			dRecord, ['_id', '_created', '_category', '_locale']
-		).items():
-
-			# Try to update the field
-			try: oLocale[f] = v
-			except ValueError as e:
-				lErrors.extend([
-					[ 'record.%s' % l[0], l[1] ] \
-					for l in e.args[0]
-				])
-
-		# If there's any errors
-		if lErrors:
-			return Error(errors.DATA_FIELDS, lErrors)
+		try:
+			oLocale.fields_set(req.data.record)
+		except ValueError as e:
+			return Error(errors.DATA_FIELDS, e.args[0])
 
 		# Update the record
-		if not oLocale.save(changes = { 'user': req['session']['user']['_id']}):
+		if not oLocale.save(changes = { 'user': req.session.user._id }):
 			return Error(errors.DB_UPDATE_FAILED)
 
 		# Return OK
@@ -504,10 +473,12 @@ class Blog(Service):
 		"""
 
 		# Make sure the user is signed in and has access
-		access.verify(req['session'], 'blog_category', access.READ)
+		access.verify(
+			req.session, { 'name': 'blog_category', 'right': access.READ }
+		)
 
 		# If there's no ID passed
-		if 'data' not in req or '_id' not in req['data']:
+		if 'data' not in req or '_id' not in req.data:
 
 			# Fetch all locales
 			lLocales = CategoryLocale.get(raw = True)
@@ -518,7 +489,7 @@ class Blog(Service):
 
 				# If the category doesn't exist
 				if d['_category'] not in dLocales:
-					dLocales[d['_category']] = {}
+					dLocales[d['_category']] = { }
 
 				# Add the locale
 				dLocales[d['_category']][d['_locale']] = \
@@ -534,7 +505,7 @@ class Blog(Service):
 			for d in lCategories:
 				try: d['locales'] = dLocales.pop(d['_id'])
 				except KeyError:
-					d['locales'] = {}
+					d['locales'] = { }
 
 			# Return the data
 			return Response(lCategories)
@@ -543,17 +514,17 @@ class Blog(Service):
 		else:
 
 			# Fetch the category
-			dCategory = Category.get(req['data']['_id'], raw = True)
+			dCategory = Category.get(req.data._id, raw = True)
 			if not dCategory:
 				return Error(
-					errors.DB_NO_RECORD, [ req['data']['_id'], 'category' ]
+					errors.DB_NO_RECORD, [ req.data._id, 'category' ]
 				)
 
 			# Fetch all locales associated
 			dCategory['locales'] = {
 				d['_locale']: without(d, [ '_category', '_locale' ]) \
 				for d in CategoryLocale.filter({
-					'_category': req['data']['_id']
+					'_category': req.data._id
 				}, raw = True)
 			}
 
@@ -574,28 +545,26 @@ class Blog(Service):
 		"""
 
 		# Make sure the user is signed in and has access
-		access.verify(req['session'], 'blog_category', access.UPDATE)
+		access.verify(
+			req.session, { 'name': 'blog_category', 'right': access.UPDATE }
+		)
 
 		# Check minimum fields
-		try: evaluate(req['data'], [ '_id', { 'record': [ 'locales' ] } ])
-		except ValueError as e:
-			return Error(
-				errors.DATA_FIELDS, [ [ s, 'missing' ] for s in e.args ]
-			)
+		self.check_data(req.data, [ '_id', { 'record': [ 'locales' ] } ])
 
 		# If it doesn't exist
-		if not Category.exists(req['data']['_id']):
+		if not Category.exists(req.data._id):
 			return Error(
-				errors.DB_NO_RECORD, [ req['data']['_id'], 'category' ]
+				errors.DB_NO_RECORD, [ req.data._id, 'category' ]
 			)
 
 		# Get the data
-		sID = req['data']['_id']
-		dRecord = req['data']['record']
+		sID = req.data._id
+		dRecord = req.data.record
 
 		# Init return result and errors
 		bRes = False
-		lErrors = []
+		lErrors = [ ]
 
 		# Get all the associated locales for this category and store them by
 		#	locale
@@ -606,16 +575,16 @@ class Blog(Service):
 		}
 
 		# Go through each locale
-		for sLocale, dLocale in dRecord['locales']:
+		for sLocale, dLocale in dRecord['locales'].items():
 
 			# Init locale errors
-			lLocaleErr = []
+			lLocaleErr = [ ]
 
 			# If we have it
 			if sLocale in dLocales:
 
 				# Go through fields that can be changed
-				for f,v in without(dLocale, ['_id', '_created', '_locale']):
+				for f, v in without(dLocale, [ '_id', '_created', '_locale' ]):
 					try: dLocales[sLocale][f] = v
 					except ValueError as e:
 						lLocaleErr.extend([
@@ -630,7 +599,7 @@ class Blog(Service):
 				# Else, try to save the locale
 				else:
 					if dLocales[sLocale].save(
-						changes = { 'user': req['session']['_id'] }
+						changes = { 'user': req.session['_id'] }
 					):
 						bRes = True
 
@@ -660,7 +629,7 @@ class Blog(Service):
 				else:
 					try:
 						if oLocale.create(
-							changes = { 'user': req['session']['user']['_id']}
+							changes = { 'user': req.session.user._id}
 						):
 							bRes = True
 					except DuplicateException as e:
@@ -687,38 +656,35 @@ class Blog(Service):
 		"""
 
 		# Make sure the user is signed in and has access
-		access.verify(req['session'], 'blog_media', access.CREATE)
+		access.verify(
+			req.session, { 'name': 'blog_media', 'right': access.CREATE }
+		)
 
 		# Check minimum fields
-		try: evaluate(req['data'], ['base64', 'filename'])
-		except ValueError as e:
-			return Error(
-				errors.DATA_FIELDS,
-				[ [ f, 'missing' ] for f in e.args ]
-			)
+		self.check_data(req.data, [ 'base64', 'filename' ])
 
 		# Attempt to decode the file
 		try:
-			dFiles = {'source': b64decode(req['data'].pop('base64'))}
+			dFiles = { 'source': b64decode(req.data.pop('base64')) }
 		except TypeError:
-			return Services.Error(1001, [['base64', 'can not decode']])
+			return Error(errors.DATA_FIELDS, [ [ 'base64', 'can not decode' ] ])
 
 		# Get the filename extension
-		sExt = os.path.splitext(req['data']['filename'])[1][1:].lower()
+		sExt = os.path.splitext(req.data.filename)[1][1:].lower()
 
 		# If the file is an image
 		dImage = None
 		if sExt.lower() in self._image_extensions:
 
 			# If dimensions were passed
-			if 'thumbnails' in req['data']:
+			if 'thumbnails' in req.data:
 
 				# Get the node
 				oNode = Media._conf['tree'].get('image').get('thumbnails')
 
 				# If they're valid, pop them off for later
-				if oNode.valid(req['data']['thumbnails']):
-					lThumbnails = req['data'].pop('thumbnails')
+				if oNode.valid(req.data.thumbnails):
+					lThumbnails = req.data.pop('thumbnails')
 
 				# Else, return the errors
 				else:
@@ -734,9 +700,9 @@ class Blog(Service):
 			except Exception as e:
 				return Error(errors.DATA_FIELDS, [ [ 'base64', str(e.args) ] ])
 
-			# Add the mime and length details to the req['data']
-			req['data']['mime'] = dInfo['mime']
-			req['data']['length'] = dInfo['length']
+			# Add the mime and length details to the req.data
+			req.data.mime = dInfo['mime']
+			req.data.length = dInfo['length']
 
 			# Init the image data
 			dImage = {
@@ -761,25 +727,25 @@ class Blog(Service):
 		else:
 
 			# Get the mime type based on the file name and store it
-			tMime = mimetypes.guess_type(req['data']['filename'])
-			req['data']['mime'] = (tMime[0] and tMime[0] or '')
+			tMime = mimetypes.guess_type(req.data.filename)
+			req.data.mime = (tMime[0] and tMime[0] or '')
 
 			# Store the length as the bytes of the file
-			req['data']['length'] = len(dFiles['source'])
+			req.data.length = len(dFiles['source'])
 
 		# Create an instance to validate the data
 		try:
 			if dImage:
-				req['data']['image'] = dImage
-			req['data']['uploader'] = req['session']['user']['_id']
-			oFile = Media(req['data'])
+				req.data.image = dImage
+			req.data.uploader = req.session.user._id
+			oFile = Media(req.data)
 		except ValueError as e:
 			return Services.Error(1001, e.args[0])
 
 		# Create the record
 		try:
 			if not oFile.create(
-				changes = { 'user': req['session']['user']['_id'] }
+				changes = { 'user': req.session.user._id }
 			):
 
 				# Record failed to be created
@@ -787,10 +753,10 @@ class Blog(Service):
 
 		# If the file already exists
 		except DuplicateException as e:
-			return Error(errors.DB_DUPLICATE)
+			return Error(errors.DB_DUPLICATE, e.args)
 
 		# Init the urls
-		dURLs = {}
+		dURLs = { }
 
 		# Go through each file generated
 		for sRes in dFiles:
@@ -840,21 +806,22 @@ class Blog(Service):
 		"""
 
 		# Make sure the user is signed in and has access
-		access.verify(req['session'], 'blog_media', access.DELETE)
+		access.verify(
+			req.session, { 'name': 'blog_media', 'right': access.DELETE }
+		)
 
 		# If the ID is missing
-		if '_id' not in req['data']:
-			return Error(errors.DATA_FIELDS)
+		self.check_data(req.data, [ '_id' ])
 
 		# Find the file
-		oFile = Media.get(req['data']['_id'])
+		oFile = Media.get(req.data._id)
 		if not oFile:
 			return Services.Error(
-				errors.DB_NO_RECORD, [ req['data']['_id'], 'media' ]
+				errors.DB_NO_RECORD, [ req.data._id, 'media' ]
 			)
 
 		# Create a list of all the keys to delete off S3
-		lFilenames = []
+		lFilenames = [ ]
 
 		# If it's an image
 		if 'image' in oFile and oFile['image']:
@@ -873,7 +840,7 @@ class Blog(Service):
 
 		# Delete the record and return the result
 		return Services.Response(
-			oFile.delete(changes = {'user': req['session']['user']['_id']})
+			oFile.delete(changes = { 'user': req.session.user._id })
 		)
 
 	def admin_media_filter_read(self, req: dict) -> Response:
@@ -890,28 +857,30 @@ class Blog(Service):
 		"""
 
 		# Make sure the user is signed in and has access
-		access.verify(req['session'], 'blog_media', access.READ)
+		access.verify(
+			req.session, { 'name': 'blog_media', 'right': access.READ }
+		)
 
 		# Init filter
-		dFilter = {}
+		dFilter = { }
 
 		# If we have a range
-		if 'range' in req['data']:
+		if 'range' in req.data:
 			dFilter['range'] = [
-				int(req['data']['range'][0]),
-				int(req['data']['range'][1])
+				int(req.data.range[0]),
+				int(req.data.range[1])
 			]
 
 		# If we have a filename
-		if 'filename' in req['data'] and req['data']['filename']:
-			dFilter['filename'] = str(req['data']['filename'])
+		if 'filename' in req.data and req.data.filename:
+			dFilter['filename'] = str(req.data.filename)
 
 		# If we have a 'mine' filter
-		if 'mine' in req['data']:
-			dFilter['mine'] = req['session']['user']['_id']
+		if 'mine' in req.data:
+			dFilter['mine'] = req.session.user._id
 
 		# If we only want images
-		if 'images_only' in req['data'] and req['data']['images_only']:
+		if 'images_only' in req.data and req.data.images_only:
 			dFilter['images_only'] = True
 
 		# If there's no filter
@@ -950,17 +919,18 @@ class Blog(Service):
 		"""
 
 		# Make sure the user is signed in and has access
-		access.verify(req['session'], 'blog_media', access.READ)
+		access.verify(
+			req.session, { 'name': 'blog_media', 'right': access.READ }
+		)
 
 		# If the ID is missing
-		if '_id' not in req['data']:
-			return Error(errors.DATA_FIELDS)
+		self.check_data(req.data, [ '_id' ])
 
 		# Find the file
-		dFile = Media.get(req['data']['_id'], raw = True)
+		dFile = Media.get(req.data._id, raw = True)
 		if not dFile:
 			return Services.Error(
-				errors.DB_NO_RECORD, [ req['data']['_id'], 'media' ]
+				errors.DB_NO_RECORD, [ req.data._id, 'media' ]
 			)
 
 		# Generate the filaname
@@ -991,31 +961,31 @@ class Blog(Service):
 		"""
 
 		# Make sure the user is signed in and has access
-		access.verify(req['session'], 'blog_media', access.UPDATE)
+		access.verify(
+			req.session, { 'name': 'blog_media', 'right': access.UPDATE }
+		)
 
 		# Check for fields
-		try: evaluate(req['data'], [ '_id', 'size' ])
-		except ValueError as e:
-			return Error(errors.DATA_FIELDS, e.args)
+		self.check_data(req.data, [ '_id', 'size' ])
 
 		# Validate the size
-		if not self._dimensions.match(req['data']['size']):
+		if not self._dimensions.match(req.data.size):
 			return Error(errors.DATA_FIELDS, [ [ 'size', 'invalid' ] ])
 
 		# Find the record
-		oFile = Media.get(req['data']['_id'])
+		oFile = Media.get(req.data._id)
 		if not oFile:
-			return Error(errors.DB_NO_RECORD, [ req['data']['_id'], 'media' ])
+			return Error(errors.DB_NO_RECORD, [ req.data._id, 'media' ])
 
 		# If the file is not an image
 		if 'image' not in oFile or not oFile['image']:
-			return Error(NOT_AN_IMAGE, req['data']['_id'])
+			return Error(NOT_AN_IMAGE, req.data._id)
 
 		# If the thumbnail already exists
-		if req['data']['size'] in oFile['image']['thumbnails']:
+		if req.data.size in oFile['image']['thumbnails']:
 			return Error(
 				errors.DB_DUPLICATE,
-				[ req['data']['_id'], req['data']['size'], 'media_thumbnail' ]
+				[ req.data._id, req.data.size, 'media_thumbnail' ]
 			)
 
 		# Fetch the raw data
@@ -1024,14 +994,14 @@ class Blog(Service):
 			return Error(STORAGE_ISSUE, MediaStorage.last_error())
 
 		# Get the type of resize and the dimensions
-		bCrop = req['data']['size'][0] == 'c'
-		sDims = req['data']['size'][1:]
+		bCrop = req.data.size[0] == 'c'
+		sDims = req.data.size[1:]
 
 		# Generate a new thumbnail
 		sThumbnails = Image.resize(sImage, sDims, bCrop)
 
 		# Generate the filename
-		sFilename = oFile.filename(req['data']['size'])
+		sFilename = oFile.filename(req.data.size)
 
 		# Store it
 		if not MediaStorage.save(sFilename, sThumbnails, oFile['mime']):
@@ -1042,16 +1012,13 @@ class Blog(Service):
 
 		# Update the thumbnails
 		dImage = clone(oFile['image'])
-		dImage['thumbnails'].append(req['data']['size'])
+		dImage['thumbnails'].append(req.data.size)
 
 		# Set the new image in the record
 		oFile['image'] = dImage
 
 		# Save the record and store the result
-		bRes = oFile.save(changes = {'user': req['session']['user']['_id']})
-
-		# If we failed to save the record
-		if not bRes:
+		if not oFile.save(changes = { 'user': req.session.user._id }):
 			return Error(errors.DB_UPDATE_FAILED)
 
 		# Return the new URL
@@ -1073,32 +1040,32 @@ class Blog(Service):
 		"""
 
 		# Make sure the user is signed in and has access
-		access.verify(req['session'], 'blog_media', access.UPDATE)
+		access.verify(
+			req.session, { 'name': 'blog_media', 'right': access.UPDATE }
+		)
 
 		# Check for fields
-		try: evaluate(req['data'], [ '_id', 'size' ])
-		except ValueError as e:
-			return Error(errors.DATA_FIELDS, e.args)
+		self.check_data(req.data, [ '_id', 'size' ])
 
 		# Validate the size
-		if not self._dimensions.match(req['data']['size']):
+		if not self._dimensions.match(req.data.size):
 			return Error(errors.DATA_FIELDS, [ [ 'size', 'invalid' ] ])
 
 		# Find the record
-		oFile = Media.get(req['data']['_id'])
+		oFile = Media.get(req.data._id)
 		if not oFile:
-			return Error(errors.DB_NO_RECORD, [ req['data']['_id'], 'media' ])
+			return Error(errors.DB_NO_RECORD, [ req.data._id, 'media' ])
 
 		# If the file is not an image
 		if 'image' not in oFile or not oFile['image']:
-			return Error(NOT_AN_IMAGE, req['data']['_id'])
+			return Error(NOT_AN_IMAGE, req.data._id)
 
 		# If the thumbnail doesn't exist
-		if req['data']['size'] not in oFile['image']['thumbnails']:
+		if req.data.size not in oFile['image']['thumbnails']:
 			return Response(False)
 
 		# Delete it
-		if not MediaStorage.delete(oFile.filename(req['data']['size'])):
+		if not MediaStorage.delete(oFile.filename(req.data.size)):
 
 			# If it failed, return a standard storage error, plus the error from
 			#	the specific storage engine
@@ -1106,13 +1073,13 @@ class Blog(Service):
 
 		# Update the thumbnails in the image section
 		dImage = clone(oFile['image'])
-		dImage['thumbnails'].remove(req['data']['size'])
+		dImage['thumbnails'].remove(req.data.size)
 
 		# Set the new image in the record
 		oFile['image'] = dImage
 
 		# Save the record and store the result
-		bRes = oFile.save(changes = {'user': req['session']['user']['_id']})
+		bRes = oFile.save(changes = { 'user': req.session.user._id })
 
 		# If we failed to save the record
 		if not bRes:
@@ -1135,36 +1102,37 @@ class Blog(Service):
 		"""
 
 		# Make sure the user is signed in and has access
-		access.verify(req['session'], 'blog_media', access.READ)
+		access.verify(
+			req.session, { 'name': 'blog_media', 'right': access.READ }
+		)
 
 		# If the ID is missing
-		if '_id' not in req['data']:
-			return Error(errors.DATA_FIELDS)
+		self.check_data(req.data, [ '_id' ])
 
 		# Find the file
-		dFile = Media.get(req['data']['_id'], raw = True)
+		dFile = Media.get(req.data._id, raw = True)
 		if not dFile:
 			return Services.Error(
-				errors.DB_NO_RECORD, [ req['data']['_id'], 'media' ]
+				errors.DB_NO_RECORD, [ req.data._id, 'media' ]
 			)
 
 		# If there's a size
-		if 'size' in req['data']:
+		if 'size' in req.data:
 
 			# If the file is not an image
 			if 'image' not in dFile or not dFile['image']:
-				return Error(NOT_AN_IMAGE, req['data']['_id'])
+				return Error(NOT_AN_IMAGE, req.data._id)
 
 			# If the size doesn't exist
-			if req['data']['size'] not in dFile['image']['thumbnails']:
+			if req.data.size not in dFile['image']['thumbnails']:
 				return Error(
 					errors.DB_NO_RECORD,
-					[ '%s.%s' % (req['data']['_id'], req['data']['size']),
+					[ '%s.%s' % (req.data._id, req.data.size),
 						'media_thumbnail' ]
 				)
 
 			# Generate the URL
-			sURL = MediaStorage.url(Media._filename(dFile, req['data']['size']))
+			sURL = MediaStorage.url(Media._filename(dFile, req.data.size))
 
 		# Else, just get the source
 		else:
@@ -1189,20 +1157,21 @@ class Blog(Service):
 		"""
 
 		# Make sure the user is signed in and has access
-		access.verify(req['session'], 'blog_post', access.CREATE)
+		access.verify(
+			req.session, { 'name': 'blog_post', 'right': access.CREATE }
+		)
 
 		# Make sure we have locales at minimum
-		if 'locales' not in req['data']:
-			return Error(errors.DATA_FIELDS, [ [ 'locales', 'missing' ] ])
+		self.check_data(req.data, [ 'locales' ])
 
 		# Go through each locale
-		for k in req['data']['locales']:
+		for k in req.data.locales:
 
 			# Make sure the slug doesn't already exist
-			if Post.exists(req['data']['locales'][k]['slug']):
+			if Post.exists(req.data.locales[k]['slug']):
 				return Error(
 					errors.DB_DUPLICATE,
-					[ req['data']['locales'][k]['slug'], 'slug' ]
+					[ req.data.locales[k]['slug'], 'slug' ]
 				)
 
 			# Check for the locale
@@ -1217,21 +1186,19 @@ class Blog(Service):
 				)
 
 		# If there's any categories sent
-		if 'categories' in req['data'] and req['data']['categories']:
+		if 'categories' in req.data and req.data.categories:
 
 			# Readability
-			lCats = req['data']['categories']
+			lCats = req.data.categories
 
 			# Check the values are unique
 			if len(set(lCats)) != len(lCats):
 				return Error(
-					errors.DATA_FIELDS, [ [ 'categories', 'not unique']]
+					errors.DATA_FIELDS, [ [ 'categories', 'not unique' ] ]
 				)
 
 			# Get all the IDs
-			lRecords = [ d['_id'] for d in Category.get(
-				lCats, raw = [ '_id' ]
-			) ]
+			lRecords = Category.get(lCats, raw = '_id')
 
 			# If the counts don't match
 			if len(lRecords) != len(lCats):
@@ -1242,13 +1209,13 @@ class Blog(Service):
 
 		# Test the values by making the raw post instance
 		try:
-			oPostRaw = PostRaw(req['data'])
+			oPostRaw = PostRaw(req.data)
 		except ValueError as e:
 			return Error(errors.DATA_FIELDS, e.args[0])
 
 		# Create the instance and store the ID
 		sID = oPostRaw.create(
-			changes = { 'user': req['session']['user']['_id'] }
+			changes = { 'user': req.session.user._id }
 		)
 
 		# If the record wasn't create
@@ -1272,24 +1239,25 @@ class Blog(Service):
 		"""
 
 		# Make sure the user is signed in and has access
-		access.verify(req['session'], 'blog_post', access.DELETE)
+		access.verify(
+			req.session, { 'name': 'blog_post', 'right': access.DELETE }
+		)
 
 		# If the ID is missing
-		if '_id' not in req['data']:
-			return Error(errors.DATA_FIELDS, [ [ '_id', 'missing' ] ])
+		self.check_data(req.data, [ '_id' ])
 
 		# Fetch the record
-		oPostRaw = PostRaw.get(req['data']['_id'])
+		oPostRaw = PostRaw.get(req.data._id)
 
 		# If it doesn't exist
 		if not oPostRaw:
 			return Error(
-				errors.DB_NO_RECORD, [ req['data']['_id'], 'post_raw' ]
+				errors.DB_NO_RECORD, [ req.data._id, 'post_raw' ]
 			)
 
 		# Go through each post by locale and save the slugs and locales
-		lLocales = []
-		lSlugs = []
+		lLocales = [ ]
+		lSlugs = [ ]
 		for sLocale, dPost in oPostRaw['locales'].items():
 			lSlugs.append(dPost['slug'])
 			lLocales.append(sLocale)
@@ -1321,13 +1289,13 @@ class Blog(Service):
 
 		# Delete the post
 		bRes = oPostRaw.delete(
-			changes = { 'user': req['session']['user']['_id']}
+			changes = { 'user': req.session.user._id }
 		)
 
 		# If the post wasn't deleted
 		if not bRes:
 			return Error(
-				errors.DB_DELETE_FAILED, [ req['data']['_id'], 'post_raw' ]
+				errors.DB_DELETE_FAILED, [ req.data._id, 'post_raw' ]
 			)
 
 		# Return OK
@@ -1347,17 +1315,18 @@ class Blog(Service):
 		"""
 
 		# Make sure the user is signed in and has access
-		access.verify(req['session'], 'blog_publish', access.UPDATE)
+		access.verify(
+			req.session, { 'name': 'blog_publish', 'right': access.UPDATE }
+		)
 
 		# If the ID is missing
-		if '_id' not in req['data']:
-			return Error(errors.DATA_FIELDS, [ [ '_id', 'missing' ] ])
+		self.check_data(req.data, [ '_id' ])
 
 		# Fetch the raw post
-		oRaw = PostRaw.get(req['data']['_id'])
+		oRaw = PostRaw.get(req.data._id)
 		if not oRaw:
 			return Error(
-				errors.DB_NO_RECORD, [ req['data']['_id'], 'post_raw' ]
+				errors.DB_NO_RECORD, [ req.data._id, 'post_raw' ]
 			)
 
 		# If the last published date is the same as the update date, then
@@ -1370,12 +1339,12 @@ class Blog(Service):
 
 		# Init possible errors, a dict of slugs to locales, and a list of
 		#	locales with tags that need to be regenerated
-		lErrors = []
+		lErrors = [ ]
 		lsTagLocales = set()
 		lsPostsLocales = set()
-		dLocalesCategories = {}
-		dLocalesTags = {}
-		dSlugs = {}
+		dLocalesCategories = { }
+		dLocalesTags = { }
+		dSlugs = { }
 
 		# Go through each locale
 		for k in oRaw['locales']:
@@ -1392,32 +1361,32 @@ class Blog(Service):
 			# Check if any of the slugs exist on other posts
 			lExisting = Post.get(list(dSlugs.keys()), filter = {
 				'_raw': { 'neq': oRaw['_id'] }
-			}, raw = [ '_slug' ])
+			}, raw = '_slug')
 
 			# If we got any posts at all, create an error item for each
 			#	duplicate
 			if lExisting:
 				lErrors = [ [
-					'locales.%s.slug' % dSlugs[d['_slug']],
+					'locales.%s.slug' % dSlugs[s],
 					'duplicate'
-				] for d in lExisting ]
+				] for s in lExisting ]
 
 		# If we got any errors
 		if lErrors:
 			return Error(errors.DATA_FIELDS, lErrors)
 
 		# Get all the posts associated with this one, stored by slug
-		dPosts = Post.by_raw(req['data']['_id'])
+		dPosts = Post.by_raw(req.data._id)
 
 		# Init the lists of posts to create and of posts to update
-		lCreate = []
-		lUpdate = []
+		lCreate = [ ]
+		lUpdate = [ ]
 
 		# Go through each locale in the raw post
 		for sLocale, dLocale in oRaw['locales'].items():
 
 			# Make a unique id from the slug and locale
-			sSlugLocale = '%s:%s' % (dLocale['slug'], sLocale)
+			sSlugLocale = '%s:%s' % ( dLocale['slug'], sLocale )
 
 			# Do we have this already
 			if sSlugLocale in dPosts:
@@ -1442,9 +1411,9 @@ class Blog(Service):
 			for d in dPosts:
 
 				# Fetch all the categories that will be deleted
-				lCategories = [ d['_category'] for d in PostCategory.filter({
+				lCategories = PostCategory.filter({
 					'_slug': d['_slug']
-				}, raw = [ '_category' ]) ]
+				}, raw = '_category')
 
 				# If there's any
 				if lCategories:
@@ -1459,9 +1428,9 @@ class Blog(Service):
 						dLocalesCategories[d['_locale']] = set(lCategories)
 
 				# Fetch all the tags that will be deleted
-				lTags = [ d['tag'] for d in PostTag.filter({
+				lTags = PostTag.filter({
 					'_slug': d['_slug']
-				}, raw = [ 'tag' ]) ]
+				}, raw = 'tag')
 
 				# If there's any
 				if lTags:
@@ -1493,9 +1462,9 @@ class Blog(Service):
 		if lCreate:
 
 			# Init the list of categories, of tags, and of posts
-			lCategories = []
-			lTags = []
-			lPosts = []
+			lCategories = [ ]
+			lTags = [ ]
+			lPosts = [ ]
 
 			# Go through each locale to create
 			for sLocale, dLocale in lCreate:
@@ -1507,7 +1476,7 @@ class Blog(Service):
 					'_locale': sLocale,
 					'title': dLocale['title'],
 					'content': dLocale['content'],
-					'meta': 'meta' in dLocale and dLocale['meta'] or {},
+					'meta': 'meta' in dLocale and dLocale['meta'] or { },
 					'locales': oRaw.localesToSlugs(sLocale)
 				}))
 
@@ -1708,7 +1677,7 @@ class Blog(Service):
 			oRaw['last_published'] = Literal('CURRENT_TIMESTAMP')
 
 			# Save the raw record
-			if oRaw.save(changes = { 'user': req['session']['user']['_id'] }):
+			if oRaw.save(changes = { 'user': req.session.user._id }):
 				return Response(True)
 
 		# Return failure
@@ -1728,17 +1697,18 @@ class Blog(Service):
 		"""
 
 		# Make sure the user is signed in and has access
-		access.verify(req['session'], 'blog_post', access.READ)
+		access.verify(
+			req.session, { 'name': 'blog_post', 'right': access.READ }
+		)
 
 		# If the ID is missing
-		if '_id' not in req['data']:
-			return Error(errors.DATA_FIELDS, [ [ '_id', 'missing' ] ])
+		self.check_data(req.data, [ '_id' ])
 
 		# Fetch the raw post
-		dPostRaw = PostRaw.get(req['data']['_id'], raw = True)
+		dPostRaw = PostRaw.get(req.data._id, raw = True)
 		if not dPostRaw:
 			return Error(
-				errors.DB_NO_RECORD, [ req['data']['_id'], 'post_raw' ]
+				errors.DB_NO_RECORD, [ req.data._id, 'post_raw' ]
 			)
 
 		# Return the post
@@ -1759,7 +1729,9 @@ class Blog(Service):
 		"""
 
 		# Make sure the user is signed in and has access
-		access.verify(req['session'], 'blog_post', access.READ)
+		access.verify(
+			req.session, { 'name': 'blog_post', 'right': access.READ }
+		)
 
 		# Fetch all the raw posts that have never been published, or whose
 		#	last updated time is newer than the last published time, and return
@@ -1782,27 +1754,28 @@ class Blog(Service):
 		"""
 
 		# Make sure the user is signed in and has access
-		access.verify(req['session'], 'blog_post', access.UPDATE)
+		access.verify(
+			req.session, { 'name': 'blog_post', 'right': access.UPDATE }
+		)
 
 		# Make sure we have the ID
-		if '_id' not in req['data']:
-			return Error(errors.DATA_FIELDS, [ [ '_id', 'missing' ] ])
+		self.check_data(req.data, [ '_id' ])
 
 		# Find the post
-		oPost = PostRaw.get(req['data']['_id'])
+		oPost = PostRaw.get(req.data._id)
 		if not oPost:
 			return Error(
-				errors.DB_NO_RECORD, [ req['data']['_id'], 'post_raw' ]
+				errors.DB_NO_RECORD, [ req.data._id, 'post_raw' ]
 			)
 
 		# Init possible errors
-		lErrors = []
+		lErrors = [ ]
 
 		# If we have categories
-		if 'categories' in req['data']:
+		if 'categories' in req.data:
 
 			# Readability
-			lCats = req['data']['categories']
+			lCats = req.data.categories
 
 			# If we have any
 			if lCats:
@@ -1810,7 +1783,7 @@ class Blog(Service):
 				# Check the values are unique
 				if len(set(lCats)) != len(lCats):
 					return Error(
-						errors.DATA_FIELDS, [ [ 'categories', 'not unique']]
+						errors.DATA_FIELDS, [ [ 'categories', 'not unique' ] ]
 					)
 
 				# Get all the IDs
@@ -1832,11 +1805,11 @@ class Blog(Service):
 				lErrors.extend(e.args[0])
 
 		# If we have locales
-		if 'locales' in req['data']:
+		if 'locales' in req.data:
 
 			# Set locales
 			try:
-				oPost['locales'] = req['data']['locales']
+				oPost['locales'] = req.data.locales
 
 				# Go through each locale
 				dSlugs = {}
@@ -1854,13 +1827,13 @@ class Blog(Service):
 					# Check if any of them exist on other posts
 					lPosts = Post.get(list(dSlugs.keys()), filter = {
 						'_raw': { 'neq': oPost['_id'] }
-					}, raw = [ '_slug' ])
+					}, raw = '_slug')
 
 					# If we got any
 					if lPosts:
-						for d in lPosts:
+						for s in lPosts:
 							lErrors.append([
-								'locales.%s.slug' % dSlugs[d['_slug']],
+								'locales.%s.slug' % dSlugs[s],
 								'duplicate'
 							])
 
@@ -1872,7 +1845,7 @@ class Blog(Service):
 			return Error(errors.DATA_FIELDS, lErrors)
 
 		# Save the record and store the result
-		bRes = oPost.save( changes = { 'user': req['session']['user']['_id'] })
+		bRes = oPost.save( changes = { 'user': req.session.user._id })
 		if not bRes:
 			return Error(errors.DB_UPDATE_FAILED)
 
@@ -1893,7 +1866,9 @@ class Blog(Service):
 		"""
 
 		# Make sure the user is signed in and has access
-		access.verify(req['session'], 'blog_post', access.READ)
+		access.verify(
+			req.session, { 'name': 'blog_post', 'right': access.READ }
+		)
 
 		# Init the dict of raw to locales
 		dRaw = {}
@@ -1916,7 +1891,7 @@ class Blog(Service):
 				'_created': d['_created'],
 				'_updated': d['_updated'],
 				'locales': {
-					d['_locale']: { 'title': d['title']}
+					d['_locale']: { 'title': d['title'] }
 				}
 			}
 
@@ -1942,12 +1917,10 @@ class Blog(Service):
 		lErrors = []
 
 		# If the locale or tag is missing is missing
-		try: evaluate(req['data'], [ 'locale', 'slug' ])
-		except ValueError as e:
-			lErrors.extend([ [ s, 'missing' ] for s in e.args ])
+		self.check_data(req.data, [ 'locale', 'slug' ])
 
 		# If the page is missing
-		if 'page' not in req['data']:
+		if 'page' not in req.data:
 			iPage = 1
 
 		# Else, we got a page
@@ -1955,7 +1928,7 @@ class Blog(Service):
 
 			# Try to convert it
 			try:
-				iPage = int(req['data']['page'])
+				iPage = int(req.data.page)
 			except ValueError as e:
 				lErrors.append([ 'page', 'invalid' ])
 
@@ -1964,14 +1937,14 @@ class Blog(Service):
 				lErrors.append([ 'page', 'invalid' ])
 
 		# If the count is missing
-		if 'count' not in req['data']:
+		if 'count' not in req.data:
 			iCount = 10
 
 		# Else, we got a count
 		else:
 
 			# Try to convert it
-			try: iCount = int(req['data']['count'])
+			try: iCount = int(req.data.count)
 			except ValueError as e:
 				lErrors.append([ 'count', 'invalid' ])
 
@@ -1985,14 +1958,14 @@ class Blog(Service):
 
 		# Fetch the associated posts from the cache
 		dPosts = PostCategory.cache_fetch(
-			req['data']['slug'],
+			req.data.slug,
 			iPage - 1,
 			iCount
 		)
 
 		# If shortened data is requested
-		if 'shorten' in req['data'] and req['data']['shorten']:
-			self._shorten(dPosts['posts'], req['data']['shorten'])
+		if 'shorten' in req.data and req.data.shorten:
+			self._shorten(dPosts['posts'], req.data.shorten)
 
 		# Return the posts and total count
 		return Response(dPosts)
@@ -2011,16 +1984,15 @@ class Blog(Service):
 		"""
 
 		# If the slug is not passed
-		if 'slug' not in req['data']:
-			return Error(errors.DATA_FIELDS, [ [ 'slug', 'missing' ] ])
+		self.check_data(req.data, [ 'slug' ])
 
 		# Fetch it by slug
-		dPost = Post.cache_fetch(req['data']['slug'])
+		dPost = Post.cache_fetch(req.data.slug)
 
 		# If it doesn't exist, 404
 		if not dPost:
 			return Error(
-				errors.DB_NO_RECORD, [ req['data']['slug'], 'post' ]
+				errors.DB_NO_RECORD, [ req.data.slug, 'post' ]
 			)
 
 		# Return the post
@@ -2040,14 +2012,13 @@ class Blog(Service):
 		"""
 
 		# Init errors
-		lErrors = []
+		lErrors = [ ]
 
 		# If the locale is missing
-		if 'locale' not in req['data']:
-			lErrors.append([ 'locale', 'missing' ])
+		self.check_data(req.data, [ 'locale' ])
 
 		# If the page is missing
-		if 'page' not in req['data']:
+		if 'page' not in req.data:
 			iPage = 1
 
 		# Else, we got a page
@@ -2055,7 +2026,7 @@ class Blog(Service):
 
 			# Try to convert it
 			try:
-				iPage = int(req['data']['page'])
+				iPage = int(req.data.page)
 			except ValueError as e:
 				lErrors.append([ 'page', 'invalid' ])
 
@@ -2064,14 +2035,14 @@ class Blog(Service):
 				lErrors.append([ 'page', 'invalid' ])
 
 		# If the count is missing
-		if 'count' not in req['data']:
+		if 'count' not in req.data:
 			iCount = 10
 
 		# Else, we got a count
 		else:
 
 			# Try to convert it
-			try: iCount = int(req['data']['count'])
+			try: iCount = int(req.data.count)
 			except ValueError as e:
 				lErrors.append([ 'count', 'invalid' ])
 
@@ -2085,17 +2056,38 @@ class Blog(Service):
 
 		# Get the posts from the cache
 		dPosts = Post.locale_cache_fetch(
-			req['data']['locale'],
+			req.data.locale,
 			iPage - 1,
 			iCount
 		)
 
 		# If shortened data is requested
-		if 'shorten' in req['data'] and req['data']['shorten']:
-			self._shorten(dPosts['posts'], req['data']['shorten'])
+		if 'shorten' in req.data and req.data.shorten:
+			self._shorten(dPosts['posts'], req.data.shorten)
 
 		# Return the posts and total count
 		return Response(dPosts)
+
+	def reset(self):
+		"""Reset
+
+		Called to reset the config and connections
+
+		Returns:
+			Brain
+		"""
+
+		# Get config
+		self._conf = config.blog({
+			'user_default_locale': 'en-US',
+			'redis': 'records'
+		})
+
+		# Create a connection to Redis for the records
+		records.redis = nr(self._conf['redis'])
+
+		# Return self for chaining
+		return self
 
 	def tag_read(self, req: dict) -> Response:
 		"""Tag read
@@ -2111,15 +2103,13 @@ class Blog(Service):
 		"""
 
 		# Init errors
-		lErrors = []
+		lErrors = [ ]
 
 		# If the locale or tag is missing is missing
-		try: evaluate(req['data'], [ 'locale', 'tag' ])
-		except ValueError as e:
-			lErrors.extend([ [ s, 'missing' ] for s in e.args ])
+		self.check_data(req.data, [ 'locale', 'tag' ])
 
 		# If the page is missing
-		if 'page' not in req['data']:
+		if 'page' not in req.data:
 			iPage = 1
 
 		# Else, we got a page
@@ -2127,7 +2117,7 @@ class Blog(Service):
 
 			# Try to convert it
 			try:
-				iPage = int(req['data']['page'])
+				iPage = int(req.data.page)
 			except ValueError as e:
 				lErrors.append([ 'page', 'invalid' ])
 
@@ -2136,14 +2126,14 @@ class Blog(Service):
 				lErrors.append([ 'page', 'invalid' ])
 
 		# If the count is missing
-		if 'count' not in req['data']:
+		if 'count' not in req.data:
 			iCount = 10
 
 		# Else, we got a count
 		else:
 
 			# Try to convert it
-			try: iCount = int(req['data']['count'])
+			try: iCount = int(req.data.count)
 			except ValueError as e:
 				lErrors.append([ 'count', 'invalid' ])
 
@@ -2157,15 +2147,15 @@ class Blog(Service):
 
 		# Fetch the associated posts from the cache
 		dPosts = PostTag.locale_cache_fetch(
-			req['data']['tag'],
-			req['data']['locale'],
+			req.data.tag,
+			req.data.locale,
 			iPage - 1,
 			iCount
 		)
 
 		# If shortened data is requested
-		if 'shorten' in req['data'] and req['data']['shorten']:
-			self._shorten(dPosts['posts'], req['data']['shorten'])
+		if 'shorten' in req.data and req.data.shorten:
+			self._shorten(dPosts['posts'], req.data.shorten)
 
 		# Return the posts and total count
 		return Response(dPosts)
@@ -2184,10 +2174,9 @@ class Blog(Service):
 		"""
 
 		# If the locale is missing
-		if 'locale' not in req['data']:
-			return Error(errors.DATA_FIELDS, [ [ 'locale', 'missing' ] ])
+		self.check_data(req.data, [ 'locale', 'missing' ])
 
 		# Fetch and return the tags by locale
 		return Response(
-			PostTag.all_locale_cache_fetch(req['data']['locale'])
+			PostTag.all_locale_cache_fetch(req.data.locale)
 		)
