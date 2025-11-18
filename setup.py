@@ -4,7 +4,7 @@ with open('README.md', 'r') as oF:
 	long_description=oF.read()
 
 setup(
-	name='blog-oc',
+	name='blog_oc',
 	version='0.2.1',
 	description='Blog contains a service to manage blog posts and comments associated',
 	long_description=long_description,
@@ -19,13 +19,13 @@ setup(
 	author='Chris Nasr - Ouroboros Coding Inc.',
 	author_email='chris@ouroboroscoding.com',
 	license='Custom',
-	packages=['blog'],
-	package_data={'blog': [
+	packages=[ 'blog' ],
+	package_data={ 'blog': [
 		'definitions/*.json',
 		'media/*',
 		'translations/*.json',
 		'upgrades/*'
-	]},
+	] },
 	python_requires='>=3.10',
 	install_requires=[
 		'body-oc>=1.0.2,<1.1',
