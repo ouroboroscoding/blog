@@ -23,9 +23,8 @@ from rest_mysql.Record_MySQL import Commands, ESelect, Record
 import pathlib
 from typing import Dict, List
 
-# Local imports
-from blog import records
-from blog.records.post import Post
+# Record imports
+from blog.records import records
 
 class PostTag(Record):
 	"""Post Tag
@@ -123,7 +122,7 @@ class PostTag(Record):
 
 		# Get the structs
 		dStruct = cls.struct(custom)
-		dPost = Post.struct(custom)
+		dPost = records.Post.struct(custom)
 
 		# Create the SQL to fetch all tags associated with posts in a specific
 		#	locale
@@ -175,7 +174,7 @@ class PostTag(Record):
 
 		# Get the structs
 		dStruct = cls.struct(custom)
-		dPost = Post.struct(custom)
+		dPost = records.Post.struct(custom)
 
 		# Generate SQL to fetch all tags and their locales associated with the
 		#	given post
@@ -273,7 +272,7 @@ class PostTag(Record):
 		lSlugs = lSlugs[iStart:iEnd]
 
 		# Get the individual posts and add them to the return
-		dReturn['posts'] = Post.cache_fetch(lSlugs)
+		dReturn['posts'] = records.Post.cache_fetch(lSlugs)
 
 		# Return the posts and total count
 		return dReturn
@@ -303,7 +302,7 @@ class PostTag(Record):
 
 		# Get the structures
 		dStruct = cls.struct(custom)
-		dPost = Post.struct(custom)
+		dPost = records.Post.struct(custom)
 
 		# Generate the SQL to fetch all the slugs that fit the tag and the
 		#	locale
@@ -348,3 +347,6 @@ class PostTag(Record):
 
 		# Return the slugs in case anyone needs them
 		return lSlugs
+
+# Store the record
+records.PostTag = PostTag

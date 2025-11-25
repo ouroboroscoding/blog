@@ -24,10 +24,7 @@ import pathlib
 from typing import List
 
 # local imports
-from blog import records
-from blog.records.category_locale import CategoryLocale
-from blog.records.post_category import PostCategory
-from blog.records.post_tag import PostTag
+from blog.records import records, redis
 
 class Post(Record):
 	"""Post
@@ -44,7 +41,7 @@ class Post(Record):
 		).parent.parent.resolve(), {
 			'__name__': 'record',
 			'__sql__': {
-				'auto_primary': True,
+				'auto_primary': False,
 				'create': [
 					'_slug', '_raw', '_locale', '_created', '_updated', 'title',
 					'content', 'meta', 'locales'
@@ -73,7 +70,7 @@ class Post(Record):
 			} },
 			'content': { '__sql__': { 'type': 'text' } },
 			'meta': { '__sql__': { 'json': True } },
-			'locale': { '__sql__': { 'json': True } }
+			'locales': { '__sql__': { 'json': True } }
 		})
 	)
 	"""Configuration"""
@@ -262,13 +259,13 @@ class Post(Record):
 		if isinstance(slug, str):
 
 			# Delete it
-			records.redis.delete(cls._post_key % slug)
+			redis.delete(cls._post_key % slug)
 
 		# Else, if we got a list
 		elif isinstance(slug, list):
 
 			# Delete them all
-			records.redis.delete(*[ cls._post_key % s for s in slug ])
+			redis.delete(*[ cls._post_key % s for s in slug ])
 
 	@classmethod
 	def cache_fetch(cls, slug: str | List[str], custom = {}) -> dict:
@@ -291,7 +288,7 @@ class Post(Record):
 		if isinstance(slug, str):
 
 			# Fetch it from the cache
-			sPost = records.redis.get(cls._post_key % slug)
+			sPost = redis.get(cls._post_key % slug)
 
 			# If it doesn't exist
 			if not sPost:
@@ -307,7 +304,7 @@ class Post(Record):
 			return jsonb.decode(sPost)
 
 		# Fetch all the posts by slug
-		lPosts = records.redis.mget([ cls._post_key % s for s in slug ])
+		lPosts = redis.mget([ cls._post_key % s for s in slug ])
 
 		# Go through each one
 		for i in range(len(lPosts)):
@@ -364,7 +361,7 @@ class Post(Record):
 
 			# Mark it as not existing for an hour so that no one can overload
 			#	the DB
-			records.redis.set(
+			redis.set(
 				cls._post_key % slug,
 				'-1',
 				ex = 3600
@@ -374,33 +371,31 @@ class Post(Record):
 			return None
 
 		# Find all the associated categories and add them to the post
-		lCategoryIDs = [
-			d['_category'] for d in PostCategory.filter({
-				'_slug': slug
-			}, raw = [ '_category' ])
-		]
+		lCategoryIDs = records.PostCategory.filter({
+			'_slug': slug
+		}, raw = '_category')
 
 		# If we have no categories
 		if not lCategoryIDs:
-			dPost['categories'] = []
+			dPost['categories'] = [ ]
 
 		# Else,
 		else:
 
 			# Find the category slugs and titles for the categories associated
 			#	in the same locale as the post
-			dPost['categories'] = CategoryLocale.filter({
+			dPost['categories'] = records.CategoryLocale.filter({
 				'_category': lCategoryIDs,
 				'_locale': dPost['_locale']
 			}, raw = [ '_category', 'slug', 'title' ], orderby = [ 'title' ])
 
 		# Find all the associated tags and add them to the post
-		dPost['tags'] = [ d['tag'] for d in PostTag.filter({
+		dPost['tags'] = [ d['tag'] for d in records.PostTag.filter({
 			'_slug': slug
 		}, raw = [ 'tag' ]) ]
 
 		# Store the record permanently in the cache
-		records.redis.set(cls._post_key % slug, jsonb.encode(dPost))
+		redis.set(cls._post_key % slug, jsonb.encode(dPost))
 
 		# Return the post
 		return dPost
@@ -444,7 +439,7 @@ class Post(Record):
 		"""
 
 		# Fetch the post IDs
-		sSlugs = records.redis.get(cls._posts_key % locale)
+		sSlugs = redis.get(cls._posts_key % locale)
 
 		# If it doesn't exist
 		if not sSlugs:
@@ -512,10 +507,13 @@ class Post(Record):
 		)
 
 		# Store the slugs in the cache
-		records.redis.set(
+		redis.set(
 			cls._posts_key % locale,
 			jsonb.encode(lSlugs)
 		)
 
 		# Return the slugs in case someone needs them
 		return lSlugs
+
+# Store the record
+records.Post = Post

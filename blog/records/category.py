@@ -21,6 +21,9 @@ from rest_mysql.Record_MySQL import Record
 # Python imports
 import pathlib
 
+# Record imports
+from blog.records import records
+
 class Category(Record):
 	"""Category
 
@@ -65,3 +68,6 @@ class Category(Record):
 			dict
 		"""
 		return cls._conf
+
+# Add the class instance
+records.Category = Category

@@ -21,6 +21,9 @@ from rest_mysql.Record_MySQL import Record
 # Python imports
 import pathlib
 
+# Record imports
+from blog.records import records
+
 class Comment(Record):
 	"""Comment
 
@@ -77,3 +80,6 @@ class Comment(Record):
 			dict
 		"""
 		return cls._conf
+
+# Add the class instance
+records.Comment = Comment

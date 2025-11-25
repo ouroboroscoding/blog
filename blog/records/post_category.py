@@ -24,10 +24,7 @@ import pathlib
 from typing import List
 
 # local imports
-from blog import records
-from blog.records.category_locale import CategoryLocale
-from blog.records.post import Post
-from blog.records.post_category import PostCategory
+from blog.records import records, redis
 
 class PostCategory(Record):
 	"""Post Category
@@ -102,7 +99,7 @@ class PostCategory(Record):
 		"""
 
 		# Fetch the slugs from the cache
-		sCategory = records.redis.get(cls._category_key % slug)
+		sCategory = redis.get(cls._category_key % slug)
 
 		# If it doesn't exist
 		if not sCategory:
@@ -129,7 +126,7 @@ class PostCategory(Record):
 		dCategory['posts'] = dCategory['posts'][iStart:iEnd]
 
 		# Get the individual posts and add them to the return
-		dCategory['posts'] = Post.cache_fetch(dCategory['posts'])
+		dCategory['posts'] = records.Post.cache_fetch(dCategory['posts'])
 
 		# Return the posts and total count
 		return dCategory
@@ -156,8 +153,8 @@ class PostCategory(Record):
 
 		# Get the structures
 		dStruct = cls.struct(custom)
-		dCategory = CategoryLocale.struct(custom)
-		dPost = Post.struct(custom)
+		dCategory = records.CategoryLocale.struct(custom)
+		dPost = records.Post.struct(custom)
 
 		# Generate the SQL to fetch all the slugs that fit the category and the
 		#	locale
@@ -191,7 +188,7 @@ class PostCategory(Record):
 
 			# Mark it as not existing for an hour so that no one can overload
 			#	the DB
-			records.redis.set(
+			redis.set(
 				cls._category_key % slug,
 				'-1',
 				ex = 3600
@@ -201,7 +198,7 @@ class PostCategory(Record):
 			return None
 
 		# Fetch the category info
-		dCategory = CategoryLocale.filter({
+		dCategory = records.CategoryLocale.filter({
 			'slug': slug
 		}, raw = ['_category', '_locale', 'title', 'description' ], limit = 1)
 
@@ -209,10 +206,13 @@ class PostCategory(Record):
 		dCategory['posts'] = lSlugs
 
 		# Permanently store the data in the cache
-		records.redis.set(
+		redis.set(
 			cls._category_key % slug,
 			jsonb.encode(dCategory)
 		)
 
 		# Return the category in case anyone needs it
 		return dCategory
+
+# Add the class instance
+records.PostCategory = PostCategory

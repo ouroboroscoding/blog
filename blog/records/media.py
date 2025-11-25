@@ -24,6 +24,9 @@ import os
 import pathlib
 from typing import List
 
+# Record imports
+from blog.records import records
+
 class Media(Record):
 	"""Media
 
@@ -183,3 +186,6 @@ class Media(Record):
 
 		# Return the records
 		return lRecords
+
+# Add the class instance
+records.Media = Media

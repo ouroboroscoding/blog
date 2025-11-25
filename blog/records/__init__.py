@@ -10,5 +10,11 @@ __maintainer__	= "Chris Nasr"
 __email__		= "chris@ouroboroscoding.com"
 __created__		= "2025-11-18"
 
+# Ouroboros modues
+import jobject
+
+records = jobject()
+"""Holds the instances of each record type"""
+
 redis = None
 """Redis records connection"""
