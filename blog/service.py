@@ -11,10 +11,12 @@ __email__		= "chris@ouroboroscoding.com"
 __created__		= "2023-11-30"
 
 # Ouroboros imports
-from body import constants, errors
-from brain import access, users
+from body import constants, Error, errors, read, Response, Service
+from brain.helpers import access, users
 from config import config
+import image
 from nredis import nr
+from rest_mysql.Record_MySQL import DuplicateException, Literal
 from strings import strip_html
 from tools import clone, evaluate, without
 
@@ -25,11 +27,6 @@ import os
 import re
 from strings import cut
 from typing import List
-
-# Pip imports
-from RestOC import Image, Services
-from RestOC.Services import Error, Response, Service
-from RestOC.Record_MySQL import DuplicateException, Literal
 
 # Errors
 from blog.errors import MINIMUM_LOCALE, NOT_AN_IMAGE, POSTS_ASSOCIATED, \
@@ -696,7 +693,7 @@ class Blog(Service):
 
 			# Attempt to get info about the photo
 			try:
-				dInfo = Image.info(dFiles['source'])
+				dInfo = image.info(dFiles['source'])
 			except Exception as e:
 				return Error(errors.DATA_FIELDS, [ [ 'base64', str(e.args) ] ])
 
@@ -721,7 +718,7 @@ class Blog(Service):
 					sDims = s[1:]
 
 					# Get a new image for the size
-					dFiles[s] = Image.resize(dFiles['source'], sDims, bCrop)
+					dFiles[s] = image.resize(dFiles['source'], sDims, bCrop)
 
 		# Else, it's a regular file
 		else:
@@ -740,7 +737,7 @@ class Blog(Service):
 			req.data.uploader = req.session.user._id
 			oFile = Media(req.data)
 		except ValueError as e:
-			return Services.Error(1001, e.args[0])
+			return Error(errors.DATA_FIELDS, e.args[0])
 
 		# Create the record
 		try:
@@ -749,7 +746,7 @@ class Blog(Service):
 			):
 
 				# Record failed to be created
-				return Services.Error(errors.DB_CREATE_FAILED)
+				return Error(errors.DB_CREATE_FAILED)
 
 		# If the file already exists
 		except DuplicateException as e:
@@ -775,7 +772,7 @@ class Blog(Service):
 					MediaStorage.delete(oFile.filename(sRes))
 
 				# Return the error
-				return Services.Error(
+				return Error(
 					STORAGE_ISSUE,
 					MediaStorage.last_error()
 				)
@@ -816,7 +813,7 @@ class Blog(Service):
 		# Find the file
 		oFile = Media.get(req.data._id)
 		if not oFile:
-			return Services.Error(
+			return Error(
 				errors.DB_NO_RECORD, [ req.data._id, 'media' ]
 			)
 
@@ -839,7 +836,7 @@ class Blog(Service):
 				return Error(STORAGE_ISSUE, MediaStorage.last_error())
 
 		# Delete the record and return the result
-		return Services.Response(
+		return Response(
 			oFile.delete(changes = { 'user': req.session.user._id })
 		)
 
@@ -929,7 +926,7 @@ class Blog(Service):
 		# Find the file
 		dFile = Media.get(req.data._id, raw = True)
 		if not dFile:
-			return Services.Error(
+			return Error(
 				errors.DB_NO_RECORD, [ req.data._id, 'media' ]
 			)
 
@@ -945,7 +942,7 @@ class Blog(Service):
 		dFile['base64'] = b64encode(sRaw)
 
 		# Return the file
-		return Services.Response(dFile)
+		return Response(dFile)
 
 	def admin_media_thumbnail_create(self, req: dict) -> Response:
 		"""Media thumbnails create
@@ -998,7 +995,7 @@ class Blog(Service):
 		sDims = req.data.size[1:]
 
 		# Generate a new thumbnail
-		sThumbnails = Image.resize(sImage, sDims, bCrop)
+		sThumbnails = image.resize(sImage, sDims, bCrop)
 
 		# Generate the filename
 		sFilename = oFile.filename(req.data.size)
@@ -1112,7 +1109,7 @@ class Blog(Service):
 		# Find the file
 		dFile = Media.get(req.data._id, raw = True)
 		if not dFile:
-			return Services.Error(
+			return Error(
 				errors.DB_NO_RECORD, [ req.data._id, 'media' ]
 			)
 
@@ -1175,7 +1172,7 @@ class Blog(Service):
 				)
 
 			# Check for the locale
-			oResponse = Services.read('mouth', 'locale/exists', { 'data': {
+			oResponse = read('mouth', 'locale/exists', { 'data': {
 				'_id': k
 			}})
 
