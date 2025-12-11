@@ -13,7 +13,7 @@ __created__		= "2025-11-18"
 # Ouroboros modues
 import jobject
 
-records = jobject()
+c = jobject()
 """Holds the instances of each record type"""
 
 redis = None

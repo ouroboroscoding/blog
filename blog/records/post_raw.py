@@ -126,10 +126,12 @@ class PostRaw(Record):
 		dStruct = cls.struct(custom)
 
 		# Generate the SQL
-		sSQL = "SELECT * FROM `%(db)s`.`%(table)s`\n" \
+		sSQL = "SELECT %(fields)s\n" \
+				"FROM `%(db)s`.`%(table)s`\n" \
 				"WHERE `last_published` IS NULL\n" \
 				"OR `_updated` > `last_published`\n" \
 				"ORDER BY `_updated`" % {
+			'fields': cls.provide_select(),
 			'db': dStruct['db'],
 			'table': dStruct['table']
 		}

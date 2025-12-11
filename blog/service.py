@@ -163,7 +163,7 @@ class Blog(Service):
 		for k, d in dRecord['locales'].items():
 
 			# Add the empty UUID so we don't fail on the `_category` check
-			d['_category'] = constants.EMPTY_UUID
+			d['_category'] = constants.EMPTY_TUUID
 
 			# Add the locale as a field
 			d['_locale'] = k
@@ -174,12 +174,12 @@ class Blog(Service):
 			except ValueError as e:
 				return Error(
 					errors.DATA_FIELDS,
-					[ [ 'record.locale.%s.%s' % (k, l[0]), l[1] ] \
+					[ [ 'record.locale.%s.%s' % (k, l[0][7:]), l[1] ] \
 						for l in e.args[0] ]
 				)
 
 			# Make sure we don't already have the slug
-			if CategoryLocale.exists(d['slug'], 'slug'):
+			if CategoryLocale.filter({ 'slug': d['slug'] }):
 				return Error(
 					errors.DB_DUPLICATE, [ '%s.%s' % (k, d['slug']), 'slug' ]
 				)
@@ -703,7 +703,10 @@ class Blog(Service):
 
 			# Init the image data
 			dImage = {
-				'resolution': dInfo['resolution'],
+				'resolution': {
+					'width': dInfo['width'],
+					'height': dInfo['height'],
+				},
 				'thumbnails': lThumbnails
 			}
 
@@ -715,10 +718,13 @@ class Blog(Service):
 
 					# Get the type and dimensions
 					bCrop = s[0] == 'c'
-					sDims = s[1:]
+					lDims = s[1:].split('x')
 
 					# Get a new image for the size
-					dFiles[s] = image.resize(dFiles['source'], sDims, bCrop)
+					dFiles[s] = image.resize(dFiles['source'], {
+						'width': int(lDims[0]),
+						'height': int(lDims[1])
+					}, bCrop)
 
 		# Else, it's a regular file
 		else:
@@ -992,10 +998,13 @@ class Blog(Service):
 
 		# Get the type of resize and the dimensions
 		bCrop = req.data.size[0] == 'c'
-		sDims = req.data.size[1:]
+		lDims = req.data.size[1:].split('x')
 
 		# Generate a new thumbnail
-		sThumbnails = image.resize(sImage, sDims, bCrop)
+		sThumbnails = image.resize(sImage, {
+			'width': int(lDims[0]),
+			'height': int(lDims[1])
+		}, bCrop)
 
 		# Generate the filename
 		sFilename = oFile.filename(req.data.size)
@@ -1263,10 +1272,10 @@ class Blog(Service):
 		dTags = PostTag.by_slugs(lSlugs)
 
 		# Delete all categories associated
-		PostCategory.delete_get(lSlugs, index = '_slug')
+		PostCategory.delete_get(filter = { '_slug': lSlugs })
 
 		# Delete all tags associated
-		PostTag.delete_get(lSlugs, index = '_slug')
+		PostTag.delete_get(filter = { '_slug': lSlugs })
 
 		# Delete all posts associated
 		Post.delete_get(lSlugs)
@@ -1416,7 +1425,7 @@ class Blog(Service):
 				if lCategories:
 
 					# Delete them
-					PostCategory.delete_get(d['_slug'], index = '_slug')
+					PostCategory.delete_get(filter = { '_slug': d['_slug'] })
 
 					# Add them to the corresponding locale
 					try:
@@ -1433,7 +1442,7 @@ class Blog(Service):
 				if lTags:
 
 					# Delete them
-					PostTag.delete_get(d['_slug'], index = '_slug')
+					PostTag.delete_get(filter = { '_slug': d['_slug'] })
 
 					# Add them to the corresponding locale
 					try:
@@ -1566,7 +1575,9 @@ class Blog(Service):
 					bChanges = True
 
 					# Delete the existing ones
-					PostCategory.delete_get(dPost['_slug'], index = '_slug')
+					PostCategory.delete_get(filter = {
+						'_slug': dPost['_slug']
+					})
 
 					# Add the deleted tags to the locale for regenerating
 					try:
@@ -1600,7 +1611,7 @@ class Blog(Service):
 					bChanges = True
 
 					# Delete the existing ones
-					PostTag.delete_get(dPost['_slug'], index = '_slug')
+					PostTag.delete_get(filter = { '_slug': dPost['_slug'] })
 
 					# Add the deleted tags to the locale for regenerating
 					try:

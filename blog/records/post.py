@@ -21,10 +21,11 @@ from rest_mysql.Record_MySQL import Commands, ESelect, Record
 
 # Python imports
 import pathlib
+from pymysql.converters import escape_string
 from typing import List
 
 # local imports
-from blog.records import records, redis
+from blog import records
 
 class Post(Record):
 	"""Post
@@ -111,8 +112,8 @@ class Post(Record):
 				"AND `p`.`_locale` = '%(locale)s'" % {
 			'db': dStruct['db'],
 			'table': dStruct['table'],
-			'cat': Commands.escape(dStruct['host'], category),
-			'locale': Commands.escape(dStruct['host'], locale),
+			'cat': escape_string(category),
+			'locale': escape_string(locale)
 		}
 
 		# Fetch and return the results
@@ -145,11 +146,13 @@ class Post(Record):
 		dStruct = cls.struct(custom)
 
 		# Escape the ID
-		sID = Commands.escape(dStruct['host'], _id)
+		sID = cls.escape(dStruct, '_raw', _id)
 
 		# Generate the SQL to fetch the posts
-		sSQL = "SELECT * FROM `%(db)s`.`%(table)s`\n" \
-				"WHERE `_raw` = '%(id)s'" % {
+		sSQL = "SELECT %(fields)s\n" \
+				"FROM `%(db)s`.`%(table)s`\n" \
+				"WHERE `_raw` = %(id)s" % {
+			'fields': cls.provide_select(),
 			'db': dStruct['db'],
 			'table': dStruct['table'],
 			'id': sID
@@ -184,14 +187,11 @@ class Post(Record):
 				"FROM `%(db)s`.`%(table)s` as `p`\n" \
 				"JOIN `%(db)s`.`%(table)s_category` as `pc` ON" \
 				" `p`.`_slug` = `pc`.`_slug`\n" \
-				"WHERE `p`.`_raw` = '%(id)s'" % {
+				"WHERE `p`.`_raw` = %(id)s" % {
 			'db': dStruct['db'],
 			'table': dStruct['table'],
 			'id': sID
 		}
-
-		print('-' * 40)
-		print(sSQL)
 
 		# Fetch the records
 		lRecords = Commands.select(
@@ -199,9 +199,6 @@ class Post(Record):
 			sSQL,
 			ESelect.ALL
 		)
-
-		print('-' * 40)
-		print(lRecords)
 
 		# Go through each one
 		for d in lRecords:
@@ -217,7 +214,7 @@ class Post(Record):
 				"FROM `%(db)s`.`%(table)s` as `p`\n" \
 				"JOIN `%(db)s`.`%(table)s_tag` as `pt` ON" \
 				" `p`.`_slug` = `pt`.`_slug`\n" \
-				"WHERE `p`.`_raw` = '%(id)s'" % {
+				"WHERE `p`.`_raw` = %(id)s" % {
 			'db': dStruct['db'],
 			'table': dStruct['table'],
 			'id': sID
@@ -259,13 +256,13 @@ class Post(Record):
 		if isinstance(slug, str):
 
 			# Delete it
-			redis.delete(cls._post_key % slug)
+			records.redis.delete(cls._post_key % slug)
 
 		# Else, if we got a list
 		elif isinstance(slug, list):
 
 			# Delete them all
-			redis.delete(*[ cls._post_key % s for s in slug ])
+			records.redis.delete(*[ cls._post_key % s for s in slug ])
 
 	@classmethod
 	def cache_fetch(cls, slug: str | List[str], custom = {}) -> dict:
@@ -288,7 +285,7 @@ class Post(Record):
 		if isinstance(slug, str):
 
 			# Fetch it from the cache
-			sPost = redis.get(cls._post_key % slug)
+			sPost = records.redis.get(cls._post_key % slug)
 
 			# If it doesn't exist
 			if not sPost:
@@ -304,7 +301,7 @@ class Post(Record):
 			return jsonb.decode(sPost)
 
 		# Fetch all the posts by slug
-		lPosts = redis.mget([ cls._post_key % s for s in slug ])
+		lPosts = records.redis.mget([ cls._post_key % s for s in slug ])
 
 		# Go through each one
 		for i in range(len(lPosts)):
@@ -361,7 +358,7 @@ class Post(Record):
 
 			# Mark it as not existing for an hour so that no one can overload
 			#	the DB
-			redis.set(
+			records.redis.set(
 				cls._post_key % slug,
 				'-1',
 				ex = 3600
@@ -371,7 +368,7 @@ class Post(Record):
 			return None
 
 		# Find all the associated categories and add them to the post
-		lCategoryIDs = records.PostCategory.filter({
+		lCategoryIDs = records.c.PostCategory.filter({
 			'_slug': slug
 		}, raw = '_category')
 
@@ -384,18 +381,18 @@ class Post(Record):
 
 			# Find the category slugs and titles for the categories associated
 			#	in the same locale as the post
-			dPost['categories'] = records.CategoryLocale.filter({
+			dPost['categories'] = records.c.CategoryLocale.filter({
 				'_category': lCategoryIDs,
 				'_locale': dPost['_locale']
 			}, raw = [ '_category', 'slug', 'title' ], orderby = [ 'title' ])
 
 		# Find all the associated tags and add them to the post
-		dPost['tags'] = [ d['tag'] for d in records.PostTag.filter({
+		dPost['tags'] = [ d['tag'] for d in records.c.PostTag.filter({
 			'_slug': slug
 		}, raw = [ 'tag' ]) ]
 
 		# Store the record permanently in the cache
-		redis.set(cls._post_key % slug, jsonb.encode(dPost))
+		records.redis.set(cls._post_key % slug, jsonb.encode(dPost))
 
 		# Return the post
 		return dPost
@@ -439,7 +436,7 @@ class Post(Record):
 		"""
 
 		# Fetch the post IDs
-		sSlugs = redis.get(cls._posts_key % locale)
+		sSlugs = records.redis.get(cls._posts_key % locale)
 
 		# If it doesn't exist
 		if not sSlugs:
@@ -492,11 +489,11 @@ class Post(Record):
 		#	locale
 		sSQL = "SELECT `_slug`\n" \
 				"FROM `%(db)s`.`%(table)s`\n" \
-				"WHERE `_locale` = '%(locale)s'\n" \
+				"WHERE `_locale` = %(locale)s\n" \
 				"ORDER BY `_created` DESC" % {
 			'db': dStruct['db'],
 			'table': dStruct['table'],
-			'locale': Commands.escape(dStruct['host'], locale)
+			'locale': cls.escape(dStruct, '_locale', locale)
 		}
 
 		# Fetch the slugs
@@ -507,7 +504,7 @@ class Post(Record):
 		)
 
 		# Store the slugs in the cache
-		redis.set(
+		records.redis.set(
 			cls._posts_key % locale,
 			jsonb.encode(lSlugs)
 		)
@@ -516,4 +513,4 @@ class Post(Record):
 		return lSlugs
 
 # Store the record
-records.Post = Post
+records.c.Post = Post

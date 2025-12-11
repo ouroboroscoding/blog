@@ -24,7 +24,7 @@ import pathlib
 from typing import List
 
 # local imports
-from blog.records import records, redis
+from blog import records
 
 class PostCategory(Record):
 	"""Post Category
@@ -99,7 +99,7 @@ class PostCategory(Record):
 		"""
 
 		# Fetch the slugs from the cache
-		sCategory = redis.get(cls._category_key % slug)
+		sCategory = records.redis.get(cls._category_key % slug)
 
 		# If it doesn't exist
 		if not sCategory:
@@ -126,7 +126,7 @@ class PostCategory(Record):
 		dCategory['posts'] = dCategory['posts'][iStart:iEnd]
 
 		# Get the individual posts and add them to the return
-		dCategory['posts'] = records.Post.cache_fetch(dCategory['posts'])
+		dCategory['posts'] = records.c.Post.cache_fetch(dCategory['posts'])
 
 		# Return the posts and total count
 		return dCategory
@@ -153,8 +153,8 @@ class PostCategory(Record):
 
 		# Get the structures
 		dStruct = cls.struct(custom)
-		dCategory = records.CategoryLocale.struct(custom)
-		dPost = records.Post.struct(custom)
+		dCategory = records.c.CategoryLocale.struct(custom)
+		dPost = records.c.Post.struct(custom)
 
 		# Generate the SQL to fetch all the slugs that fit the category and the
 		#	locale
@@ -164,7 +164,7 @@ class PostCategory(Record):
 				"	ON `c`.`_category` = `cl`.`_category`\n" \
 				"JOIN `%(db_p)s`.`%(table_p)s` as `p`\n" \
 				"	ON `c`.`_slug` = `p`.`_slug`\n" \
-				"WHERE `cl`.`slug` = '%(slug)s'\n" \
+				"WHERE `cl`.`slug` = %(slug)s\n" \
 				"AND `cl`.`_locale` = `p`.`_locale`\n" \
 				"ORDER BY `p`.`_created` DESC" % {
 			'db': dStruct['db'],
@@ -173,7 +173,7 @@ class PostCategory(Record):
 			'table_cl': dCategory['table'],
 			'db_p': dPost['db'],
 			'table_p': dPost['table'],
-			'slug': Commands.escape(dStruct['host'], slug)
+			'slug': cls.escape(dCategory, 'slug', slug)
 		}
 
 		# Fetch the column of slugs
@@ -188,7 +188,7 @@ class PostCategory(Record):
 
 			# Mark it as not existing for an hour so that no one can overload
 			#	the DB
-			redis.set(
+			records.redis.set(
 				cls._category_key % slug,
 				'-1',
 				ex = 3600
@@ -198,7 +198,7 @@ class PostCategory(Record):
 			return None
 
 		# Fetch the category info
-		dCategory = records.CategoryLocale.filter({
+		dCategory = records.c.CategoryLocale.filter({
 			'slug': slug
 		}, raw = ['_category', '_locale', 'title', 'description' ], limit = 1)
 
@@ -206,7 +206,7 @@ class PostCategory(Record):
 		dCategory['posts'] = lSlugs
 
 		# Permanently store the data in the cache
-		redis.set(
+		records.redis.set(
 			cls._category_key % slug,
 			jsonb.encode(dCategory)
 		)
@@ -215,4 +215,4 @@ class PostCategory(Record):
 		return dCategory
 
 # Add the class instance
-records.PostCategory = PostCategory
+records.c.PostCategory = PostCategory

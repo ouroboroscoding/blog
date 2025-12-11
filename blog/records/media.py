@@ -22,6 +22,7 @@ from rest_mysql.Record_MySQL import Commands, ESelect, Record
 # Python imports
 import os
 import pathlib
+from pymysql.converters import escape_string
 from typing import List
 
 # Record imports
@@ -148,9 +149,7 @@ class Media(Record):
 			))
 		if 'filename' in options and options['filename']:
 			lWhere.append("`filename` LIKE '%%%s%%'" % \
-				Commands.escape(
-					dStruct['host'], options['filename']
-				)
+				escape_string(options['filename'])
 			)
 		if 'mine' in options and options['mine']:
 			lWhere.append("`uploader` = '%s'" % options['mine'])
@@ -162,11 +161,12 @@ class Media(Record):
 			return []
 
 		# Generate the SQL
-		sSQL = "SELECT *\n" \
+		sSQL = "SELECT %(fields)s\n" \
 			 	"FROM `%(db)s`.`%(table)s`\n" \
 				"WHERE %(where)s" % {
 			'db': dStruct['db'],
 			'table': dStruct['table'],
+			'fields': cls.provide_select(),
 			'where': ' AND '.join(lWhere)
 		}
 

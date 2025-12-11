@@ -24,7 +24,7 @@ import pathlib
 from typing import Dict, List
 
 # Record imports
-from blog.records import records
+from blog import records
 
 class PostTag(Record):
 	"""Post Tag
@@ -42,7 +42,6 @@ class PostTag(Record):
 			'__name__': 'record',
 			'__sql__': {
 				'auto_primary': False,
-				'changes': [ 'user' ],
 				'create': [ '_slug', 'tag' ],
 				'db': config.mysql.db('blog'),
 				'host': config.blog.mysql('records'),
@@ -122,7 +121,7 @@ class PostTag(Record):
 
 		# Get the structs
 		dStruct = cls.struct(custom)
-		dPost = records.Post.struct(custom)
+		dPost = records.c.Post.struct(custom)
 
 		# Create the SQL to fetch all tags associated with posts in a specific
 		#	locale
@@ -130,14 +129,14 @@ class PostTag(Record):
 				"FROM `%(db)s`.`%(table)s` as `t`\n" \
 				"JOIN `%(db_p)s`.`%(table_p)s` as `p`\n" \
 				"	 ON `t`.`_slug` = `p`.`_slug`\n" \
-				"WHERE `p`.`_locale` = '%(locale)s'\n" \
+				"WHERE `p`.`_locale` = %(locale)s\n" \
 				"GROUP BY `t`.`tag`\n" \
 				"ORDER BY `t`.`tag`" % {
 			'db': dStruct['db'],
 			'table': dStruct['table'],
 			'db_p': dPost['db'],
 			'table_p': dPost['table'],
-			'locale': Commands.escape(dStruct['host'], locale)
+			'locale': cls.escape(dPost, '_locale', locale)
 		}
 
 		# Fetch the tags
@@ -174,7 +173,7 @@ class PostTag(Record):
 
 		# Get the structs
 		dStruct = cls.struct(custom)
-		dPost = records.Post.struct(custom)
+		dPost = records.c.Post.struct(custom)
 
 		# Generate SQL to fetch all tags and their locales associated with the
 		#	given post
@@ -272,7 +271,7 @@ class PostTag(Record):
 		lSlugs = lSlugs[iStart:iEnd]
 
 		# Get the individual posts and add them to the return
-		dReturn['posts'] = records.Post.cache_fetch(lSlugs)
+		dReturn['posts'] = records.c.Post.cache_fetch(lSlugs)
 
 		# Return the posts and total count
 		return dReturn
@@ -302,7 +301,7 @@ class PostTag(Record):
 
 		# Get the structures
 		dStruct = cls.struct(custom)
-		dPost = records.Post.struct(custom)
+		dPost = records.c.Post.struct(custom)
 
 		# Generate the SQL to fetch all the slugs that fit the tag and the
 		#	locale
@@ -310,15 +309,15 @@ class PostTag(Record):
 				"FROM `%(db)s`.`%(table)s` as `t`\n" \
 				"JOIN `%(db_p)s`.`%(table_p)s` as `p`\n" \
 				"	ON `t`.`_slug` = `p`.`_slug`\n" \
-				"WHERE `t`.`tag` = '%(tag)s'\n" \
-				"AND `p`.`_locale` = '%(locale)s'\n" \
+				"WHERE `t`.`tag` = %(tag)s\n" \
+				"AND `p`.`_locale` = %(locale)s\n" \
 				"ORDER BY `p`.`_created` DESC" % {
 			'db': dStruct['db'],
 			'table': dStruct['table'],
 			'db_p': dPost['db'],
 			'table_p': dPost['table'],
-			'tag': Commands.escape(dStruct['host'], tag),
-			'locale': Commands.escape(dStruct['host'], locale)
+			'tag': cls.escape(dStruct, 'tag', tag),
+			'locale': cls.escape(dPost, '_locale', locale)
 		}
 
 		# Fetch the column of slugs
@@ -349,4 +348,4 @@ class PostTag(Record):
 		return lSlugs
 
 # Store the record
-records.PostTag = PostTag
+records.c.PostTag = PostTag
