@@ -23,7 +23,7 @@ from rest_mysql.Record_MySQL import Commands, ESelect, Record
 import pathlib
 
 # Record imports
-from blog.records import records
+from blog import records
 
 class PostRaw(Record):
 	"""Post Raw
@@ -161,4 +161,4 @@ class PostRaw(Record):
 		return lRecords
 
 # Add the class instance
-records.PostRaw = PostRaw
+records.c.PostRaw = PostRaw

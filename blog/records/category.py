@@ -22,7 +22,7 @@ from rest_mysql.Record_MySQL import Record
 import pathlib
 
 # Record imports
-from blog.records import records
+from blog import records
 
 class Category(Record):
 	"""Category
@@ -70,4 +70,4 @@ class Category(Record):
 		return cls._conf
 
 # Add the class instance
-records.Category = Category
+records.c.Category = Category

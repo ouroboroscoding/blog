@@ -22,7 +22,7 @@ from rest_mysql.Record_MySQL import Record
 import pathlib
 
 # Record imports
-from blog.records import records
+from blog import records
 
 class CategoryLocale(Record):
 	"""Category Locale
@@ -81,4 +81,4 @@ class CategoryLocale(Record):
 		return cls._conf
 
 # Add the class instance
-records.CategoryLocale = CategoryLocale
+records.c.CategoryLocale = CategoryLocale

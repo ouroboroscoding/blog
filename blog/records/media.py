@@ -26,7 +26,7 @@ from pymysql.converters import escape_string
 from typing import List
 
 # Record imports
-from blog.records import records
+from blog import records
 
 class Media(Record):
 	"""Media
@@ -188,4 +188,4 @@ class Media(Record):
 		return lRecords
 
 # Add the class instance
-records.Media = Media
+records.c.Media = Media

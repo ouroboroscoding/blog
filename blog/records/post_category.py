@@ -54,7 +54,8 @@ class PostCategory(Record):
 				'collate': 'utf8mb4_bin'
 			},
 
-			'_slug': { '__sql__': { 'type': 'varchar(128)' } }
+			'_slug': { '__sql__': { 'type': 'varchar(128)' } },
+			'_category': { '__sql__': { 'binary': True } }
 		})
 	)
 	"""Configuration"""
@@ -101,6 +102,8 @@ class PostCategory(Record):
 		# Fetch the slugs from the cache
 		sCategory = records.redis.get(cls._category_key % slug)
 
+		print(sCategory)
+
 		# If it doesn't exist
 		if not sCategory:
 
@@ -111,6 +114,7 @@ class PostCategory(Record):
 
 		# If we got -1, return None
 		elif sCategory == '-1' or sCategory == b'-1':
+			print(sCategory)
 			return None
 
 		# Else, decode them

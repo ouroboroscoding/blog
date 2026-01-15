@@ -1971,6 +1971,10 @@ class Blog(Service):
 			iCount
 		)
 
+		# If there's nothing
+		if not dPosts:
+			return Response([ ])
+
 		# If shortened data is requested
 		if 'shorten' in req.data and req.data.shorten:
 			self._shorten(dPosts['posts'], req.data.shorten)
