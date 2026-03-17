@@ -102,8 +102,6 @@ class PostCategory(Record):
 		# Fetch the slugs from the cache
 		sCategory = records.redis.get(cls._category_key % slug)
 
-		print(sCategory)
-
 		# If it doesn't exist
 		if not sCategory:
 
@@ -114,7 +112,6 @@ class PostCategory(Record):
 
 		# If we got -1, return None
 		elif sCategory == '-1' or sCategory == b'-1':
-			print(sCategory)
 			return None
 
 		# Else, decode them

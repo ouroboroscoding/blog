@@ -14,13 +14,15 @@ __created__		= "2025-11-18"
 # Ouroboros imports
 from config import config
 import jsonb
+from rest_mysql.Record_MySQL import Commands, DuplicateException, ESelect
 from strings import uuid_strip_dashes
 
 # Python imports
+from os import makedirs
 from os.path import abspath, expanduser, exists
 
 # Pip imports
-from rest_mysql.Record_MySQL import Commands, DuplicateException, ESelect
+from pymysql.converters import escape_string
 
 # Local imports
 from blog.records import category, category_locale, comment, media, post, \
@@ -36,10 +38,14 @@ def run():
 	"""
 
 	# Get Mouth data folder
-	sDataPath = config.blog.data('./.blog')
+	sDataPath = config.blog.data('./.data')
 	if '~' in sDataPath:
 		sDataPath = expanduser(sDataPath)
 	sDataPath = abspath(sDataPath)
+
+	# If the path doesn't exist
+	if not exists(sDataPath):
+		makedirs(sDataPath)
 
 	############################################################################
 	# Category section
@@ -112,7 +118,7 @@ def run():
 	for d in lChangeRecords:
 		dStruct['_id'] = uuid_strip_dashes(d['_id'])
 		dStruct['created'] = d['created']
-		dStruct['items'] = Commands.escape(dStruct['host'], d['items'])
+		dStruct['items'] = escape_string(d['items'])
 		sSQL = "INSERT INTO `%(db)s`.`%(table)s_changes` " \
 					"(`_id`, `created`, `items`) " \
 				"VALUES (UNHEX('%(_id)s'), FROM_UNIXTIME(%(created)s), " \
@@ -192,7 +198,7 @@ def run():
 	for d in lChangeRecords:
 		dStruct['_id'] = uuid_strip_dashes(d['_id'])
 		dStruct['created'] = d['created']
-		dStruct['items'] = Commands.escape(dStruct['host'], d['items'])
+		dStruct['items'] = escape_string(d['items'])
 		sSQL = "INSERT INTO `%(db)s`.`%(table)s_changes` " \
 					"(`_id`, `created`, `items`) " \
 				"VALUES (UNHEX('%(_id)s'), FROM_UNIXTIME(%(created)s), " \
@@ -317,8 +323,9 @@ def run():
 			dStruct['host'],
 			'SELECT `_slug`, ' \
 				'UNIX_TIMESTAMP(`_created`) as `_created`, ' \
-				'`_slug`, `_raw`, `_locale`, `_created`, `_updated`, ' \
-				'`title`, `content`, `meta`, `locales` ' \
+				'UNIX_TIMESTAMP(`_updated`) as `_updated`, ' \
+				'`_raw`, `_locale`, `title`, `content`, ' \
+				'`meta`, `locales` ' \
 			'FROM `%(db)s`.`%(table)s` ORDER BY `_created`' % dStruct,
 			ESelect.ALL
 		)
@@ -336,6 +343,8 @@ def run():
 	for d in lRecords:
 		try:
 			d['_raw'] = uuid_strip_dashes(d['_raw'])
+			d['meta'] = jsonb.decode(d['meta'])
+			d['locales'] = jsonb.decode(d['locales'])
 			post.Post.create_now(d, changes = False)
 		except DuplicateException as e:
 			print(e.args)
@@ -413,13 +422,13 @@ def run():
 		jsonb.store(lChangeRecords, sPostRawChangesFile)
 
 	# Generate the name of the post_raws backup file
-	sLocalesFile = '%s/blog_v0_3_post_raws.json' % sDataPath
+	sPostRawFile = '%s/blog_v0_3_post_raws.json' % sDataPath
 
 	# If the backup file already exists
-	if exists(sLocalesFile):
+	if exists(sPostRawFile):
 
 		# Load it
-		lRecords = jsonb.load(sLocalesFile)
+		lRecords = jsonb.load(sPostRawFile)
 
 	# Else, no backup yet
 	else:
@@ -430,13 +439,14 @@ def run():
 			'SELECT `_id`, ' \
 				'UNIX_TIMESTAMP(`_created`) as `_created`, ' \
 				'UNIX_TIMESTAMP(`_updated`) as `_updated`, ' \
-				'`last_published`, `categories`, `locales` ' \
+				'UNIX_TIMESTAMP(`last_published`) as `last_published`, ' \
+				'`categories`, `locales` ' \
 			'FROM `%(db)s`.`%(table)s` ORDER BY `_created`' % dStruct,
 			ESelect.ALL
 		)
 
 		# Store them to a local file
-		jsonb.store(lRecords, sLocalesFile)
+		jsonb.store(lRecords, sPostRawFile)
 
 		# Drop the table
 		post_raw.PostRaw.table_drop()
@@ -451,6 +461,7 @@ def run():
 			d['categories'] = jsonb.decode(d['categories'])
 			for i, s in enumerate(d['categories']):
 				d['categories'][i] = uuid_strip_dashes(s)
+			d['locales'] = jsonb.decode(d['locales'])
 			post_raw.PostRaw.create_now(d, changes = False)
 		except DuplicateException as e:
 			print(e.args)
@@ -459,9 +470,12 @@ def run():
 	for d in lChangeRecords:
 		dStruct['_id'] = uuid_strip_dashes(d['_id'])
 		dStruct['created'] = d['created']
-		dStruct['items'] = Commands.escape(dStruct['host'], d['items'])
+		dStruct['items'] = escape_string(d['items'])
 		sSQL = "INSERT INTO `%(db)s`.`%(table)s_changes` " \
 					"(`_id`, `created`, `items`) " \
 				"VALUES (UNHEX('%(_id)s'), FROM_UNIXTIME(%(created)s), " \
 					"'%(items)s')" % dStruct
 		Commands.execute(dStruct['host'], sSQL)
+
+	# Return OK
+	return True
