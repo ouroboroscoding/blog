@@ -10,10 +10,8 @@ __version__		= "1.0.0"
 __email__		= "chris@ouroboroscoding.com"
 __created__		= "2023-11-28"
 
-__all__ = ['body']
-
-# Ouroboros imports
-from body import errors as body
+# Import all body errors as local errors
+from body.errors import *
 
 STORAGE_ISSUE = 1400
 """Storage issue"""
@@ -26,3 +24,6 @@ POSTS_ASSOCIATED = 1402
 
 MINIMUM_LOCALE = 1403
 """Denotes trying to delete a locale that would leave the parent with no data"""
+
+__all__ = [ n for n,v in globals().items() if isinstance(v, int) ]
+""" Export all the constants"""

@@ -1,0 +1,6 @@
+[submodule "define"]
+	path = define
+	url = git@github.com:ouroboroscoding/blog-define
+[submodule "blog/define"]
+	path = blog/define
+	url = git@github.com:ouroboroscoding/blog-define

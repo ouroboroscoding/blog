@@ -24,7 +24,8 @@ from sys import stderr
 from typing import Dict
 
 # Project records
-from blog.records import Post, PostTag
+from blog.records.post import Post
+from blog.records.post_tag import PostTag
 
 # Get the translations path
 _translationsPath = '%s/translations' % pathlib.Path(__file__).parent.resolve()
@@ -117,7 +118,7 @@ class BlogSeo(object):
 		self._translations = {}
 
 		# Create the redis instance
-		self._redis = nr(config.blog.redis_host('blog'))
+		self._redis = nr(config.blog.redis('records'))
 
 	def fetch(self, path: str, locale: str = 'en-US') -> dict:
 		"""Fetch
