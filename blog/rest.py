@@ -11,106 +11,50 @@ __email__		= "chris@ouroboroscoding.com"
 __created__		= "2023-11-27"
 
 # Ouroboros imports
-from body import errors
 from config import config
+import em
 
 # Python imports
-from os import environ
-
-# Pip imports
-from RestOC import EMail, REST, Services, Session
+from pprint import pformat
 
 # Module imports
 from blog.service import Blog
+
+def errors(error):
+
+	# If we don't send out errors
+	if not config.mouth.send_error_emails(False):
+		return True
+
+	# Generate a list of the individual parts of the error
+	lErrors = [
+		'ERROR MESSAGE\n\n%s\n' % error['traceback'],
+		'REQUEST\n\n%s %s:%s\n' % (
+			error['method'], error['service'], error['path']
+		)
+	]
+	if 'data' in error and error['data']:
+		lErrors.append('DATA\n\n%s\n' % pformat(error['data']))
+	if 'session' in error and error['session']:
+		lErrors.append('SESSION\n\n%s\n' % pformat({
+			k:error['session'][k] for k in error['session']
+		}))
+	if 'environment' in error and error['environment']:
+		lErrors.append('ENVIRONMENT\n\n%s\n' % pformat(error['environment']))
+
+	# Send the email
+	return em.error('\n'.join(lErrors))
 
 def run():
 	"""Run
 
 	Starts the http REST server
+
+	Returns:
+		None
 	"""
 
-	# Init the email module
-	EMail.init(config.email({
-		'error_to': 'errors@localhost',
-		'from': 'admin@localhost',
-		'smtp': {
-			'host': 'localhost',
-			'port': 587,
-			'tls': True,
-			'user': 'noone',
-			'passwd': 'nopasswd'
-		}
-	}))
-
-	# Init the Session module
-	Session.init('session')
-
-	# Get the REST config
-	dRest = config.rest({
-		'allowed': 'localhost',
-		'default': {
-			'domain': 'localhost',
-			'host': '0.0.0.0',
-			'port': 8800,
-			'protocol': 'http',
-			'workers': 1
-		},
-		'services': {
-			'brain': {'port': 0},
-			'blog': {'port': 2}
-		}
-	})
-
-	# Create the REST config instance
-	oRestConf = REST.Config(dRest)
-
-	# Set verbose mode if requested
-	if 'VERBOSE' in environ and environ['VERBOSE'] == '1':
-		Services.verbose()
-
-	# Get all the services
-	dServices = { k:None for k in dRest['services'] }
-
-	# Add this service
-	dServices['blog'] = Blog()
-
-	# Register all services
-	Services.register(
-		dServices,
-		oRestConf,
-		config.services.salt(),
-		config.services.internal_key_timeout(10)
-	)
-
-	# Create the HTTP server and map requests to service
-	REST.Server({
-
-		'/admin/category': { 'methods': REST.CREATE | REST.DELETE | REST.READ },
-		'/admin/category/locale': { 'methods': REST.CREATE | REST.DELETE | REST.UPDATE },
-
-		'/admin/post': { 'methods': REST.ALL },
-		'/admin/post/publish': { 'methods': REST.UPDATE },
-		'/admin/post/unpublished': { 'methods': REST.READ },
-		'/admin/posts': { 'methods': REST.READ },
-
-		'/admin/media': { 'methods': REST.CREATE | REST.DELETE | REST.READ },
-		'/admin/media/filter': { 'methods': REST.READ },
-		'/admin/media/thumbnail': { 'methods': REST.CREATE | REST.DELETE },
-		'/admin/media/url': { 'methods': REST.READ },
-
-		'/category': { 'methods': REST.READ },
-		'/post': { 'methods': REST.READ },
-		'/posts': { 'methods': REST.READ },
-		'/tag': { 'methods': REST.READ },
-		'/tags': { 'methods': REST.READ }
-
-		},
-		'blog',
-		'https?://(.*\\.)?%s' % config.rest.allowed('localhost').replace('.', '\\.'),
-		error_callback = errors.service_error
-	).run(
-		host=oRestConf['blog']['host'],
-		port=oRestConf['blog']['port'],
-		workers=oRestConf['blog']['workers'],
-		timeout='timeout' in oRestConf['blog'] and oRestConf['blog']['timeout'] or 30
+	# Init and run the service as a REST server
+	Blog().rest(
+		on_errors = errors
 	)
