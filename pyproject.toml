@@ -4,7 +4,7 @@ build-backend = 'hatchling.build'
 
 [project]
 name = 'blog_oc'
-version = '0.3.0'
+version = '0.3.1'
 description = 'Blog contains a service to manage blog posts, media, and categories'
 authors = [
     {name = 'Chris Nasr - Ouroboros Coding Inc.', email = 'chris@ouroboroscoding.com'}
@@ -17,17 +17,17 @@ readme = 'README.md'
 requires-python = '>=3.10'
 dependencies = [
 	'body_oc>=2.2.0,<2.3',
-	'brain2_oc>=2.4.2,<2.5',
+	'brain2_oc>=2.4.4,<2.5',
 	'config-oc>=1.1.0,<1.2',
 	'define-oc>=1.0.5,<1.1',
-	'email-smtp>=1.0.1,<1.1',
+	'email-smtp>=1.0.3,<1.1',
 	'jobject>=1.0.4,<1.1',
 	'jsonb>=1.0.0,<1.1',
 	'namedredis>=1.0.2,<1.1',
-	'rest_mysql>=1.2.5,<1.3',
+	'rest_mysql>=1.2.7,<1.3',
 	'strings-oc>=1.0.7,<1.1',
 	'tools-oc>=1.2.5,<1.3',
-	'upgrade_oc>=1.1.0,<1.2'
+	'upgrade_oc>=1.1.1,<1.2'
 ]
 
 [project.urls]
