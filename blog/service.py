@@ -1414,7 +1414,7 @@ class Blog(Service):
 
 			# Go through each post that no longer has a counterpoint in the raw
 			#	data
-			for d in dPosts:
+			for d in dPosts.values():
 
 				# Fetch all the categories that will be deleted
 				lCategories = PostCategory.filter({

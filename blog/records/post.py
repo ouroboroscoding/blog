@@ -183,7 +183,8 @@ class Post(Record):
 			dResults[sSlugLocale] = d
 
 		# Generate the SQL to fetch the categories
-		sSQL = "SELECT `p`.`_slug`, `p`.`_locale`, `pc`.`_category`\n" \
+		sSQL = "SELECT `p`.`_slug`, `p`.`_locale`, " \
+					"LOWER(HEX(`pc`.`_category`)) as `_category`\n" \
 				"FROM `%(db)s`.`%(table)s` as `p`\n" \
 				"JOIN `%(db)s`.`%(table)s_category` as `pc` ON" \
 				" `p`.`_slug` = `pc`.`_slug`\n" \
