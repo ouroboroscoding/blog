@@ -1,5 +1,13 @@
 # blog_oc releases
 
+## 0.3.2
+- Updated minimum brain2_oc to 2.4.6.
+- Updated minimum rest_mysql to 1.3.0 and refactored associated code.
+
+## 0.3.1
+- Fixed a bug where renaming the slug of a post caused a crash.
+- Fixed a bug where fetching blog posts caused a crash.
+
 ## 0.3.0
 - Updated all pip modules to latest versions.
 - Removed local "definition" files and replaced them with submodule "define" files.

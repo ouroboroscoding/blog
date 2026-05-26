@@ -131,7 +131,7 @@ class PostRaw(Record):
 				"WHERE `last_published` IS NULL\n" \
 				"OR `_updated` > `last_published`\n" \
 				"ORDER BY `_updated`" % {
-			'fields': cls.provide_select(),
+			'fields': cls.provide_select(struct = dStruct),
 			'db': dStruct['db'],
 			'table': dStruct['table']
 		}

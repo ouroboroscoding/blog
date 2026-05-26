@@ -166,7 +166,7 @@ class Media(Record):
 				"WHERE %(where)s" % {
 			'db': dStruct['db'],
 			'table': dStruct['table'],
-			'fields': cls.provide_select(),
+			'fields': cls.provide_select(struct = dStruct),
 			'where': ' AND '.join(lWhere)
 		}
 
