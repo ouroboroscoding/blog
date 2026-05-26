@@ -12,17 +12,8 @@ __email__		= "chris@ouroboroscoding.com"
 __created__		= "2025-11-18"
 
 # Ouroboros imports
-from config import config
 import jsonb
-from rest_mysql.Record_MySQL import Commands, DuplicateException, ESelect
-from strings import uuid_strip_dashes
-
-# Python imports
-from os import makedirs
-from os.path import abspath, expanduser, exists
-
-# Pip imports
-from pymysql.converters import escape_string
+from rest_mysql.Record_MySQL import Commands
 
 # Local imports
 from blog.records import media
@@ -40,7 +31,10 @@ def run():
 	dS = media.Media.struct()
 
 	# Get the select
-	sFields = media.Media.provide_select([ '_id', 'image' ])
+	sFields = media.Media.provide_select(
+		[ '_id', 'image' ],
+		struct = dS
+	)
 
 	# Fetch all the media records
 	lRecords = Commands.select(

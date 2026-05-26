@@ -152,7 +152,7 @@ class Post(Record):
 		sSQL = "SELECT %(fields)s\n" \
 				"FROM `%(db)s`.`%(table)s`\n" \
 				"WHERE `_raw` = %(id)s" % {
-			'fields': cls.provide_select(),
+			'fields': cls.provide_select(struct = dStruct),
 			'db': dStruct['db'],
 			'table': dStruct['table'],
 			'id': sID
